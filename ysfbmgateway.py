@@ -36,6 +36,7 @@ ver = '221119'
 a_connesso = False
 b_connesso = True
 lock = False
+t_lock = 0.0
 
 a_tf = 0.0 # tempo trascorso da ultimo pacchetto
 b_tf = 0.0
@@ -78,6 +79,10 @@ try:
   log_backupCount = int(config['General']['log_backupCount'])
 except:
   log_backupCount = 10  
+try:
+   dgid_prefix = int(config['General']['dgid_prefix_enable'])
+except:
+   dgid_prefix = 0
 
 
 ack_period = 3.0
@@ -177,7 +182,7 @@ sock_b.bind((UDP_IP_B, UDP_PORT_B_R))
 
 
 TG=100*[0]
-
+DGID = 0
 
 def signal_handler(signal, frame):
   global run, a_connesso, b_connesso, arresto
@@ -226,10 +231,15 @@ def read_dgid_file(f):
 
 
 def conn (sock, lato):
-    global a_connesso, ACK_A
+    global a_connesso, ACK_A, DGID, TG
   
     # Connection to BM YSF DIRECT
     if ((lato == 'A') and (AUTH_A == 1)):
+      for i in range(100):
+        if (TG[i] == OPTIONS_A):
+          DGID = i
+          break
+          
       logging.info('conn: Try to connect to BM Server') 
       try:
         sock.sendto(str.encode(MESSAGE_A), (UDP_IP_A, UDP_PORT_A))
@@ -299,7 +309,7 @@ def send_b():
       logging.error('send_b: Error sending data to MMDVMHost ' + str(e))
 
 def rcv_a():
-  global a_connesso, b_connesso, a_b_dir, b_a_dir, ack_time_a, a_tf, b_tf, lock, ACK_A
+  global a_connesso, b_connesso, a_b_dir, b_a_dir, ack_time_a, a_tf, b_tf, lock, ACK_A, DGID,  dgid_prefix
   while True:
     if a_connesso:  
       try:
@@ -312,6 +322,7 @@ def rcv_a():
         
         if ((len(msgFromServer[0]) == 16) and (msgFromServer[0][0:16] == str.encode('YSFNAK' + ACK_A[4:14]))):
           logging.error('TG changing rejected by BM Server ')  
+          DGID = 0
         
         if ((len(msgFromServer[0]) == 14) and (msgFromServer[0][0:14] == str.encode(ACK_A))):
           
@@ -368,7 +379,30 @@ def rcv_a():
               lock_b_time.release()
               if (a_connesso and b_connesso and a_b_dir and not lock):
                # bya_msg[4:14] = str.encode(CALL_B.ljust(10))
-                q_ab.put(bytes(bya_msg))    
+                if ((dgid_prefix > 0) and (DGID > 0)):
+                  if (FI == 0): 
+                    data_p = bya_msg[35:]
+                    if (ysfpayload.processheaderdata(bya_msg[35:])):
+                      csd1 = ((ysfpayload.m_dest).ljust(10) + (str(DGID) + '/' + str(bya_msg[14:24], 'utf-8').strip()).ljust(10)).encode()
+                      csd2 = (ysfpayload.m_downlink.ljust(10) + ysfpayload.m_uplink.ljust(10)).encode()
+                      ysfpayload.writeHeader(data_p, csd1, csd2)
+                      data_mod = bytearray(155)
+                      data_mod[:35] = bya_msg[:35]
+                      data_mod[35:] = data_p  
+                      q_ab.put(bytes(data_mod))
+                  else:
+                     if ((FN == 1) and (DT == 2)):
+                        data_p = bya_msg[35:]
+                        src = (str(DGID) + '/' + str(bya_msg[14:24], 'utf-8').strip()).ljust(10).encode()
+                        ysfpayload.writeVDMmode2Data(data_p, src)
+                        data_mod = bytearray(155)
+                        data_mod[:35] = bya_msg[:35]
+                        data_mod[35:] = data_p  
+                        q_ab.put(bytes(data_mod))
+                     else:
+                       q_ab.put(bytes(bya_msg))    
+                else:
+                  q_ab.put(bytes(bya_msg))    
        
               if (FI == 2):
                 lock_dir.acquire()
@@ -385,7 +419,7 @@ def rcv_a():
 
 
 def rcv_b():
-  global a_connesso, b_connesso, a_b_dir, b_a_dir, ack_time_b, a_tf, b_tf, OPTIONS_A, lock, TG
+  global a_connesso, b_connesso, a_b_dir, b_a_dir, ack_time_b, a_tf, b_tf, OPTIONS_A, lock, TG, t_lock, DGID
   while True:
     if True:
       try:
@@ -417,9 +451,11 @@ def rcv_b():
                   # cambio TG
                   if (TG[SQL] != 0): 
                     OPTIONS_A = TG[SQL]
+                    DGID = SQL
                     s_options = 'YSFO' + CALL_A.ljust(10) + 'group=' + str(OPTIONS_A)
                     q_ba.put(str.encode(s_options))                    
                     lock = True
+                    t_lock = 0.0
                   
                 if (FI == 0):
                   lock_dir.acquire()
@@ -475,7 +511,7 @@ def rcv_b():
 
 # clock per gestione keepalive
 def clock ():
- global ack_time_a, ack_time_b, ack_tout, a_tf, b_tf, a_b_dir, b_a_dir
+ global ack_time_a, ack_time_b, ack_tout, a_tf, b_tf, a_b_dir, b_a_dir, lock, t_lock
  t = ack_tout * 1.1
  while 1:
      if (a_tf < 5.0):
@@ -508,6 +544,13 @@ def clock ():
        ack_time_b +=0.1
        lock_b.release()
      
+     if lock:
+       t_lock += 0.1
+     
+     if (t_lock > 5.0):
+       lock = False
+       logging.info('clock: Reset lock by timeout')
+       t_lock = 0.0
       
      time.sleep(0.1)
 
