@@ -1,0 +1,14 @@
+[Unit]
+Description=YSF BM Gateway
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=10
+User=root
+ExecStart=/opt/YSFBMGateway/ysfbmgateway.py /opt/YSFBMGateway/ysfbmgateway.ini
+
+[Install]
+WantedBy=multi-user.target
