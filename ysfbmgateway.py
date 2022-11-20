@@ -84,6 +84,19 @@ try:
 except:
    dgid_prefix = 0
 
+try:
+   time_to_home = float(config['BM']['time_to_home'])
+except:
+   time_to_home = 900.0
+
+if (time_to_home < 60.0):
+ time_to_home = 60.0
+
+try:
+   back_to_home = int(config['BM']['back_to_home'])
+except:
+   back_to_home = 0
+
 
 ack_period = 3.0
 ack_tout = 30.0  
@@ -91,6 +104,7 @@ ack_tout = 30.0
 ack_time_a = ack_tout 
 ack_time_b = ack_tout 
 
+t_home_act = 0.0
 
 # "BM" side
 UDP_IP_A = config['BM']['address']
@@ -110,6 +124,11 @@ try:
   OPTIONS_A = int(config['BM']['options'])
 except:
   OPTIONS_A = 0
+
+if (OPTIONS_A > 0):
+  HOME_TG = OPTIONS_A
+else:
+  HOME_TG = 0  
 
 
 # "B" side
@@ -186,7 +205,7 @@ DGID = 0
 
 def signal_handler(signal, frame):
   global run, a_connesso, b_connesso, arresto
-  logging.info('Shutdown in progress ... ...')
+  logging.info('Shutdown in progress ...')
   arresto = True
   time.sleep(0.5)
   if a_connesso:
@@ -204,7 +223,7 @@ def read_dgid_file(f):
   try:
     file = open(f)
     TG_TMP = 100*[0]
-    logging.info('Reload DG-ID/TG from File')
+    logging.info('Load DG-ID/TG from File')
     for row in file:
       content = row.strip()
       # valid line (not a comment)
@@ -419,7 +438,7 @@ def rcv_a():
 
 
 def rcv_b():
-  global a_connesso, b_connesso, a_b_dir, b_a_dir, ack_time_b, a_tf, b_tf, OPTIONS_A, lock, TG, t_lock, DGID
+  global a_connesso, b_connesso, a_b_dir, b_a_dir, ack_time_b, a_tf, b_tf, OPTIONS_A, lock, TG, t_lock, DGID, t_home_act
   while True:
     if True:
       try:
@@ -432,7 +451,8 @@ def rcv_b():
           ack_time_b = 0
           lock_b.release()
           
-        if (msgFromServer[0][0:4] == b'YSFD'):
+        if (msgFromServer[0][0:4] == b'YSFD'):          
+          t_home_act = 0.0
           if ysffich.decode(msgFromServer[0][40:]): 
             FI = ysffich.getFI()
             SQL = ysffich.getSQ()
@@ -500,7 +520,7 @@ def rcv_b():
                 lock = False
             else:
               #########################
-              logging.info('W-X Command - SQL = ' + str(SQL) + ' DT = ' + str(DT))   
+              logging.info('rcv_b: W-X Command - SQL = ' + str(SQL) + ' DT = ' + str(DT))   
           else:
              logging.error('rcv_b: error decoding FICH')  
       except Exception as e:
@@ -511,7 +531,7 @@ def rcv_b():
 
 # clock per gestione keepalive
 def clock ():
- global ack_time_a, ack_time_b, ack_tout, a_tf, b_tf, a_b_dir, b_a_dir, lock, t_lock
+ global ack_time_a, ack_time_b, ack_tout, a_tf, b_tf, a_b_dir, b_a_dir, lock, t_lock, t_home_act, OPTIONS_A, DGID
  t = ack_tout * 1.1
  while 1:
      if (a_tf < 5.0):
@@ -551,6 +571,17 @@ def clock ():
        lock = False
        logging.info('clock: Reset lock by timeout')
        t_lock = 0.0
+     
+     if ((HOME_TG > 0) and (HOME_TG != OPTIONS_A) and (back_to_home > 0)): # not at home
+       t_home_act += 0.1
+     
+     if ((t_home_act > time_to_home) and not a_b_dir and not b_a_dir and (OPTIONS_A != HOME_TG) and (back_to_home > 0)):  # back to home
+       OPTIONS_A = HOME_TG
+       DGID = HOME_DGID
+       logging.info('clock: Back To Home at ' + str(OPTIONS_A))
+       s_options = 'YSFO' + CALL_A.ljust(10) + 'group=' + str(OPTIONS_A)
+       q_ba.put(str.encode(s_options))
+       t_home_act = 0.0                      
       
      time.sleep(0.1)
 
@@ -581,6 +612,10 @@ def keepalive():
 run = True
 logging.info('YSFBMGateway Ver. ' + ver + ': started')
 read_dgid_file(dgid_file)
+for i in range(100):
+  if (TG[i] == OPTIONS_A):
+    HOME_DGID = i
+    break
 
 arresto = False
 signal.signal(signal.SIGINT, signal_handler)
