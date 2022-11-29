@@ -30,8 +30,9 @@ import signal
 import ysffich
 import ysfpayload
 import hashlib
+import wiresx
 
-ver = '221119'
+ver = '221128'
 
 a_connesso = False
 b_connesso = True
@@ -54,6 +55,8 @@ lock_dir = threading.Lock()
 a_b_dir = False # direzione attiva A --> B
 b_a_dir = False # direzione attiva B --> A
 bufferSize = 2048
+wx_cmd = 0 
+wx_t = 0
 
 ## config
 config = configparser.ConfigParser()
@@ -96,6 +99,40 @@ try:
    back_to_home = int(config['BM']['back_to_home'])
 except:
    back_to_home = 0
+
+try:
+  RX_freq = int(config['Info']['RXFrequency'])
+except:
+  RX_freq = 435000000
+  
+try:
+  TX_freq = int(config['Info']['TXFrequency'])
+except:
+  TX_freq = 435000000  
+  
+try:
+  Pow = int(config['Info']['Power'])
+except:
+  Pow = 1
+  
+try:
+  Lat = float(config['Info']['Latitude'])
+except:
+  Lat = 0.0  
+
+try:
+  Lon = float(config['Info']['Longitude'])
+except:
+  Lon = 0.0  
+
+try:
+  Height = int(config['Info']['Height'])
+except:
+  Height = 0
+
+Name = config['Info']['Name']
+
+Description =config['Info']['Description']
 
 
 ack_period = 3.0
@@ -145,7 +182,7 @@ except:
   
 CALL_B = config['General']['Callsign'] 
 
-
+SUF_B = config['General']['Suffix'] 
 
 REM_PREF_B = 0
 AUTH_A = 1
@@ -297,7 +334,7 @@ def conn (sock, lato):
            
             
             if ((not sock_err) and (len(msg) == 16) and (msg[0:16] == str.encode('YSFACK' + ACK_A[4:14]))):
-              logging.info('BM Server Connected')
+              logging.info('BM Server Connected on TG ' + str(OPTIONS_A))
               lock_conn_a.acquire()
               a_connesso = True
               lock_conn_a.release()  
@@ -328,7 +365,7 @@ def send_b():
       logging.error('send_b: Error sending data to MMDVMHost ' + str(e))
 
 def rcv_a():
-  global a_connesso, b_connesso, a_b_dir, b_a_dir, ack_time_a, a_tf, b_tf, lock, ACK_A, DGID,  dgid_prefix
+  global a_connesso, b_connesso, a_b_dir, b_a_dir, ack_time_a, a_tf, b_tf, lock, ACK_A, DGID, dgid_prefix, wx_cmd
   while True:
     if a_connesso:  
       try:
@@ -336,7 +373,9 @@ def rcv_a():
         #print(msgFromServer[0])        
         if ((len(msgFromServer[0]) == 16) and (msgFromServer[0][0:16] == str.encode('YSFACK' + ACK_A[4:14]))):
           logging.error('TG changed to ' + str(OPTIONS_A))
-          #lock = False 
+          if (wx_cmd == 3):
+            wx_cmd = 30
+         # lock = False 
          # print('ricevuto ACK') 
         
         if ((len(msgFromServer[0]) == 16) and (msgFromServer[0][0:16] == str.encode('YSFNAK' + ACK_A[4:14]))):
@@ -438,7 +477,7 @@ def rcv_a():
 
 
 def rcv_b():
-  global a_connesso, b_connesso, a_b_dir, b_a_dir, ack_time_b, a_tf, b_tf, OPTIONS_A, lock, TG, t_lock, DGID, t_home_act
+  global a_connesso, b_connesso, a_b_dir, b_a_dir, ack_time_b, a_tf, b_tf, OPTIONS_A, lock, TG, t_lock, DGID, t_home_act, wx_cmd, wx_t
   while True:
     if True:
       try:
@@ -451,6 +490,7 @@ def rcv_b():
           ack_time_b = 0
           lock_b.release()
           
+          
         if (msgFromServer[0][0:4] == b'YSFD'):          
           t_home_act = 0.0
           if ysffich.decode(msgFromServer[0][40:]): 
@@ -458,6 +498,7 @@ def rcv_b():
             SQL = ysffich.getSQ()
             VOIP = ysffich.getVoIP()
             FN = ysffich.getFN()
+            FT = ysffich.getFT()
             DT = ysffich.getDT()
             #print('FI: ' + str(ysffich.getFI()) + ' - DT: ' + str(ysffich.getDT()))
             if ((SQL != 127) and (DT != 1)):              
@@ -520,7 +561,62 @@ def rcv_b():
                 lock = False
             else:
               #########################
-              logging.info('rcv_b: W-X Command - SQL = ' + str(SQL) + ' DT = ' + str(DT))   
+              # logging.info('rcv_b: W-X Command - SQL = ' + str(SQL) + ' DT = ' + str(DT) + ' FI = ' + str(FI) + ' FN = ' + str(FN) + ' FT = ' + str(FT))  
+              try:
+                cmd = wiresx.process(msgFromServer[0][35:], CALL_B, DT, FI, FN, FT) 
+              except Exception as e:
+                logging.error('rcv_b: wires-x process command: ' + str(e))
+              if (cmd == 1):
+                logging.info('rcv_b: Received Wires-x DX_REQ Command')
+                wx_cmd = 1
+                wx_t = 0.0
+                
+                
+              if (cmd == 2):
+                logging.info('rcv_b: Received Wires-x ALL_REQ Command')
+                wx_cmd = 2
+                wx_t = 0.0
+                
+                
+              if (cmd == 3):
+                logging.info('rcv_b: Received Wires-x CON_REQ Command')
+                tg_s = ''
+                for i in wiresx.wx_command[5:10]:
+                  tg_s+=chr(i)
+                try:
+                  tg_i = int(tg_s)
+                except:
+                  tg_i = 0
+                if ((tg_i > 0) and (tg_i != OPTIONS_A)):
+                  logging.info('rcv_b: Received Wires-x Request for change TG to '+ str(tg_i))
+                  OPTIONS_A = tg_i
+                  dg_tmp = 0
+                  for i in range(100):
+                    if (TG[i] == OPTIONS_A):
+                      dg_tmp = i
+                      break
+                  
+                  if (dg_tmp != 0):
+                    DGID = dg_tmp
+                  else:
+                    DGID = 0
+                  
+                  s_options = 'YSFO' + CALL_A.ljust(10) + 'group=' + str(OPTIONS_A)
+                  q_ba.put(str.encode(s_options))                    
+                  lock = True
+                  t_lock = 0.0  
+                  
+                      
+                  wx_cmd = 3
+                  wx_t = 0.0 
+                    
+                
+              if (cmd == 4):
+                logging.info('rcv_b: Received Wires-x DIS_REQ Command')
+                
+              if (cmd == 5):
+                logging.info('rcv_b: Received Wires-x CAT_REQ Command')
+                              
           else:
              logging.error('rcv_b: error decoding FICH')  
       except Exception as e:
@@ -531,7 +627,7 @@ def rcv_b():
 
 # clock per gestione keepalive
 def clock ():
- global ack_time_a, ack_time_b, ack_tout, a_tf, b_tf, a_b_dir, b_a_dir, lock, t_lock, t_home_act, OPTIONS_A, DGID
+ global ack_time_a, ack_time_b, ack_tout, a_tf, b_tf, a_b_dir, b_a_dir, lock, t_lock, t_home_act, OPTIONS_A, DGID, wx_cmd, wx_t
  t = ack_tout * 1.1
  while 1:
      if (a_tf < 5.0):
@@ -567,9 +663,9 @@ def clock ():
      if lock:
        t_lock += 0.1
      
-     if (t_lock > 5.0):
+     if (t_lock > 7.0):
        lock = False
-       logging.info('clock: Reset lock by timeout')
+       # logging.info('clock: Reset lock by timeout')
        t_lock = 0.0
      
      if ((HOME_TG > 0) and (HOME_TG != OPTIONS_A) and (back_to_home > 0)): # not at home
@@ -582,6 +678,24 @@ def clock ():
        s_options = 'YSFO' + CALL_A.ljust(10) + 'group=' + str(OPTIONS_A)
        q_ba.put(str.encode(s_options))
        t_home_act = 0.0                      
+     
+     if (wx_cmd > 0):
+       wx_t += 0.1
+     
+     if (wx_t > 0.5):
+       wx_t = 0.0
+       if (wx_cmd == 1):
+         wx_cmd = 0
+         wiresx.ReplyToWiresxDxReqPacket(a_connesso, OPTIONS_A, q_ab)
+         
+       if (wx_cmd == 2):
+         wx_cmd = 0
+         wiresx.ReplyToWiresxAllReqPacket(q_ab)  
+         
+       if (wx_cmd == 30):   # wx_cmd == 3 with BM ACK
+         wx_cmd = 0
+         wiresx.ReplyToWiresxConnReqPacket(a_connesso, OPTIONS_A, q_ab) 
+         
       
      time.sleep(0.1)
 
@@ -616,6 +730,11 @@ for i in range(100):
   if (TG[i] == OPTIONS_A):
     HOME_DGID = i
     break
+nd_tmp = CALL_B.strip() + '-' + SUF_B.strip()
+if (len(nd_tmp) > 10):
+  nd_tmp = CALL_B
+  
+wiresx.setInfo(Name, TX_freq, RX_freq, CALL_B, nd_tmp.ljust(10))
 
 arresto = False
 signal.signal(signal.SIGINT, signal_handler)

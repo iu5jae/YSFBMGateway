@@ -108,7 +108,7 @@ def decode(byt):
 
 def encode(byt):
   global m_fich
-
+  # print(m_fich)
   crc.addCCITT162(m_fich, 6)
 
   b0 = ((m_fich[0] << 4) & 0xFF0) | ((m_fich[1] >> 4) & 0x00F)
