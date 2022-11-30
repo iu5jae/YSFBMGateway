@@ -182,7 +182,7 @@ def ReplyToWiresxConnReqPacket(conn, tg, q):
   data[35:36] = b'5'
 
   data[36:41] = str(tg).zfill(5).encode()
-  data[41:57] = ('BM-' + str(tg)).ljust(16).encode()
+  data[41:57] = ('TG' + str(tg)).ljust(16).encode()
   data[57:60] = '099'.encode()
   # data[60:70] = 'DSC10 '.ljust(10).encode()
   data[70:84] = 'BM YSF DIRECT'.ljust(14).encode()
@@ -292,7 +292,7 @@ def EncodeAndSendWiresxPacket(data, q):
      
       q.put(buffer)         
       #print(buffer)
-      time.sleep(0.1)
+      time.sleep(0.07)
   
   # end frame
   ysffich.setFI(2)
