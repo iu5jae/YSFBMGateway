@@ -32,7 +32,7 @@ import ysfpayload
 import hashlib
 import wiresx
 
-ver = '221128'
+ver = '221201'
 
 a_connesso = False
 b_connesso = True
@@ -478,7 +478,7 @@ def rcv_a():
 
 
 def rcv_b():
-  global a_connesso, b_connesso, a_b_dir, b_a_dir, ack_time_b, a_tf, b_tf, OPTIONS_A, lock, TG, t_lock, DGID, t_home_act, wx_cmd, wx_t
+  global a_connesso, b_connesso, a_b_dir, b_a_dir, ack_time_b, a_tf, b_tf, OPTIONS_A, lock, TG, t_lock, DGID, t_home_act, wx_cmd, wx_t, wx_start
   while True:
     if True:
       try:
@@ -577,6 +577,19 @@ def rcv_b():
               if (cmd == 2):
                 logging.info('rcv_b: Received Wires-x ALL_REQ Command')
                 wx_cmd = 2
+                wx_start = 0
+                if ((chr(wiresx.wx_command[5]) == '0') and (chr(wiresx.wx_command[6]) == '1')): # ALL without search
+                  s_start = ''
+                  for i in wiresx.wx_command[7:10]:
+                    s_start+=chr(i)
+                  try:
+                    wx_start = int(s_start)
+                  except:
+                    wx_start = 0
+                  
+                  if (wx_start > 0):
+                   wx_start -= 1
+                        
                 # print(wiresx.wx_command)
                 wx_t = 0.0
                 
@@ -590,7 +603,7 @@ def rcv_b():
                   tg_i = int(tg_s)
                 except:
                   tg_i = 0
-                if ((tg_i > 0) and (tg_i != OPTIONS_A)):
+                if ((tg_i > 1) and (tg_i != OPTIONS_A)):
                   logging.info('rcv_b: Received Wires-x Request for change TG to '+ str(tg_i))
                   OPTIONS_A = tg_i
                   dg_tmp = 0
@@ -630,7 +643,7 @@ def rcv_b():
 
 # clock per gestione keepalive
 def clock ():
- global ack_time_a, ack_time_b, ack_tout, a_tf, b_tf, a_b_dir, b_a_dir, lock, t_lock, t_home_act, OPTIONS_A, DGID, wx_cmd, wx_t
+ global ack_time_a, ack_time_b, ack_tout, a_tf, b_tf, a_b_dir, b_a_dir, lock, t_lock, t_home_act, OPTIONS_A, DGID, wx_cmd, wx_t, wx_start
  t = ack_tout * 1.1
  while 1:
      if (a_tf < 5.0):
@@ -693,7 +706,7 @@ def clock ():
          
        if (wx_cmd == 2):
          wx_cmd = 0
-         wiresx.ReplyToWiresxAllReqPacket(q_ab)  
+         wiresx.ReplyToWiresxAllReqPacket(q_ab, TG_DG_DICT, wx_start)  
          
        if (wx_cmd == 30):   # wx_cmd == 3 with BM ACK
          wx_cmd = 0
@@ -729,6 +742,11 @@ def keepalive():
 run = True
 logging.info('YSFBMGateway Ver. ' + ver + ': started')
 read_dgid_file(dgid_file)
+TG_DG_DICT = {}
+for i in range(100):
+  if (TG[i] != 0):
+    TG_DG_DICT.update({i:TG[i]})
+
 for i in range(100):
   if (TG[i] == OPTIONS_A):
     HOME_DGID = i

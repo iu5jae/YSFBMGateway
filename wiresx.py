@@ -317,7 +317,7 @@ def EncodeAndSendWiresxPacket(data, q):
   return
 
 
-def ReplyToWiresxAllReqPacket(q):
+def ReplyToWiresxAllReqPacket(q, TG_DG, start):
   global seqn
   ok = True
   data = bytearray(1200)
@@ -331,8 +331,13 @@ def ReplyToWiresxAllReqPacket(q):
   data[7:12] = str(m_id).encode()
   data[12:22] = m_node.ljust(10).encode()
   
-  total = 60
-  n = 20
+  total = len(TG_DG)
+  n = total - start
+  tg_dg_list = list(TG_DG.keys())
+  
+  # max 20 record
+  if (n > 20):
+    n = 20
   
   data[22:28] = (str(n).zfill(3) + str(total).zfill(3)).encode()
   data[28] = 0x0D
@@ -341,14 +346,26 @@ def ReplyToWiresxAllReqPacket(q):
     for j in range(50):
       data[offset+j] = 0x20 
     data[offset:offset+1] = b'5'
-    data[offset+1:offset+6] = str(i+1).zfill(5).encode()
-    data[offset+6:offset+22] = ('TG-' + str(i+1).zfill(5)).ljust(16).encode()
+    tg = TG_DG[tg_dg_list[i + start]]
+    s_warn = ''
+    if (len(str(tg)) > 5):  #TG not selectable from wires-x command
+      tg = 1
+      s_warn = ' *'
+    data[offset+1:offset+6] = str(tg).zfill(5).encode()
+    data[offset+6:offset+22] = ('TG-' + str(TG_DG[tg_dg_list[i + start]]) + '/' + str(tg_dg_list[i + start]) + s_warn).ljust(16).encode()
     data[offset+22:offset+25] = b'099'
     data[offset+25:offset+35] = b'          '
     data[offset+35:offset+49] = b'DESCRIPTION   '
     data[offset+49] = 0x0D
     offset += 50
     # print(str(i) + ' -> ' + str(offset))
+  
+  if (n < 20):
+    k = 1029 - offset
+    for i in range(k):
+      data[offset+i] = 0x20
+  
+    offset += k
     
   data[offset] = 0x03
   data[offset+1] = crc.addCRC(data, offset+1) 
