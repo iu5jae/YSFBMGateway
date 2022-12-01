@@ -390,20 +390,21 @@ def rcv_a():
        
         if (msgFromServer[0][0:4] == b'YSFD'):
           #print(msgFromServer[0])
-          if ysffich.decode(msgFromServer[0][40:]): 
-            FI = ysffich.getFI()
-            SQL = ysffich.getSQ()
-            VOIP = ysffich.getVoIP()
-            FN = ysffich.getFN()
-            DT = ysffich.getDT()
+          fich_a = ysffich.decode(msgFromServer[0][40:])
+          if fich_a: 
+            FI = ysffich.getFI(fich_a)
+            SQL = ysffich.getSQ(fich_a)
+            VOIP = ysffich.getVoIP(fich_a)
+            FN = ysffich.getFN(fich_a)
+            DT = ysffich.getDT(fich_a)
             # print('FI: ' + str(ysffich.getFI()) + ' - DT: ' + str(ysffich.getDT()))
             # print(msgFromServer[0])
             # print('*****')
             if True:
-              ysffich.setSQ(0)
-              ysffich.setVoIP(False)
+              ysffich.setSQ(0,fich_a)
+              ysffich.setVoIP(False, fich_a)
               bya_msg = bytearray(msgFromServer[0])   
-              ysffich.encode(bya_msg)
+              ysffich.encode(bya_msg, fich_a)
               if ((not a_b_dir) and (not b_a_dir) and (FI != 2)):  # new stream and bridge free            
                 if (FI == 0):  # valid HC
                   lock_dir.acquire()
@@ -424,8 +425,8 @@ def rcv_a():
                   except Exception as e:
                     logging.error('rcv_a: error writing missing HC ' + str(e))
                   # print('setto direzioni')
-                  ysffich.setFI(0)
-                  ysffich.encode(bya_msg)
+                  ysffich.setFI(0, fich_a)
+                  ysffich.encode(bya_msg, fich_a)
                   # print(bya_msg)
                   lock_dir.acquire()
                   a_b_dir = True
@@ -493,19 +494,20 @@ def rcv_b():
           
         if (msgFromServer[0][0:4] == b'YSFD'):          
           t_home_act = 0.0
-          if ysffich.decode(msgFromServer[0][40:]): 
-            FI = ysffich.getFI()
-            SQL = ysffich.getSQ()
-            VOIP = ysffich.getVoIP()
-            FN = ysffich.getFN()
-            FT = ysffich.getFT()
-            DT = ysffich.getDT()
+          fich_b = ysffich.decode(msgFromServer[0][40:])
+          if fich_b: 
+            FI = ysffich.getFI(fich_b)
+            SQL = ysffich.getSQ(fich_b)
+            VOIP = ysffich.getVoIP(fich_b)
+            FN = ysffich.getFN(fich_b)
+            FT = ysffich.getFT(fich_b)
+            DT = ysffich.getDT(fich_b)
             #print('FI: ' + str(ysffich.getFI()) + ' - DT: ' + str(ysffich.getDT()))
             if ((SQL != 127) and (DT != 1)):              
-              ysffich.setSQ(0)
-              ysffich.setVoIP(False)
+              ysffich.setSQ(0, fich_b)
+              ysffich.setVoIP(False, fich_b)
               bya_msg = bytearray(msgFromServer[0])   
-              ysffich.encode(bya_msg)
+              ysffich.encode(bya_msg, fich_b)
               #print('a > b ' +  str(a_b_dir) + ' b > a ' + str(b_a_dir))
               if ((not a_b_dir) and (not b_a_dir) and (FI != 2)):  # header and bridge free
                 if ((SQL != 0) and (TG[SQL] != OPTIONS_A) and (SQL < 100)):
@@ -536,8 +538,8 @@ def rcv_b():
                     bya_msg[35 + ysfpayload.YSF_SYNC_LENGTH_BYTES + ysfpayload.YSF_FICH_LENGTH_BYTES:] = data[ysfpayload.YSF_SYNC_LENGTH_BYTES + ysfpayload.YSF_FICH_LENGTH_BYTES:]
                   except Exception as e:
                     logging.error('rcv_b: error writing missing HC ' + str(e))
-                  ysffich.setFI(0)
-                  ysffich.encode(bya_msg)
+                  ysffich.setFI(0, fich_b)
+                  ysffich.encode(bya_msg, fich_b)
                   # print('setto direzioni')
                   # print(bya_msg)
                   lock_dir.acquire()
@@ -575,6 +577,7 @@ def rcv_b():
               if (cmd == 2):
                 logging.info('rcv_b: Received Wires-x ALL_REQ Command')
                 wx_cmd = 2
+                # print(wiresx.wx_command)
                 wx_t = 0.0
                 
                 
@@ -682,7 +685,7 @@ def clock ():
      if (wx_cmd > 0):
        wx_t += 0.1
      
-     if (wx_t > 0.5):
+     if (wx_t > 1.0):
        wx_t = 0.0
        if (wx_cmd == 1):
          wx_cmd = 0
