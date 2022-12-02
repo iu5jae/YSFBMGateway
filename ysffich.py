@@ -13,7 +13,7 @@ import ysfpayload
 
 BIT_MASK_TABLE = [0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01]
 
-m_fich = []
+# m_fich = []
 
 
 INTERLEAVE_TABLE = [
@@ -52,7 +52,7 @@ def READ_BIT1(p,i):
 
 
 def decode(byt):
-  global m_fich
+
 
   ysfconvolution.convolution_start()
    
@@ -106,8 +106,8 @@ def decode(byt):
 
 
 
-def encode(byt):
-  global m_fich
+def encode(byt, m_fich):
+  # global m_fich
   # print(m_fich)
   crc.addCCITT162(m_fich, 6)
 
@@ -163,125 +163,124 @@ def encode(byt):
     
 
 
-def getFI():
+def getFI(m_fich):
   return (m_fich[0] >> 6) & 0x03
 
 
-def getCS():
+def getCS(m_fich):
   return (m_fich[0] >> 4) & 0x03
 
 
-def getCM():
+def getCM(m_fich):
   return (m_fich[0] >> 2) & 0x03
 
 
-def getBN():
+def getBN(m_fich):
   return m_fich[0] & 0x03
 
 
-def getBT():
+def getBT(m_fich):
   return (m_fich[1] >> 6) & 0x03
 
 
-def getFN():
+def getFN(m_fich):
   return (m_fich[1] >> 3) & 0x07
 
 
-def getFT():
+def getFT(m_fich):
   return m_fich[1] & 0x07
 
 
-def getDT():
+def getDT(m_fich):
   return m_fich[2] & 0x03
 
 
-def getMR():
+def getMR(m_fich):
   return (m_fich[2] >> 3) & 0x03
 
 
-def getDev():
+def getDev(m_fich):
   return (m_fich[2] & 0x40) == 0x40
 
-def getVoIP():
+def getVoIP(m_fich):
   return (m_fich[2] & 0x04) == 0x04
 
 
-def getSQL():
+def getSQL(m_fich):
   return (m_fich[3] & 0x80) == 0x80
 
 
-def getSQ():
+def getSQ(m_fich):
   return m_fich[3] & 0x7F
 
 
-def setFI(fi):
-  global m_fich
+def setFI(fi, m_fich):
   m_fich[0] &= 0x3F;
   m_fich[0] |= (fi << 6) & 0xC0
 
 
-def setCS(cs):
+def setCS(cs, m_fich):
   m_fich[0] &= 0xCF
   m_fich[0] |= (cs << 4) & 0x30
 
 
-def setCM(cm):
+def setCM(cm, m_fich):
   m_fich[0] &= 0xF3
   m_fich[0] |= (cm << 2) & 0x0C
 
 
-def setFN(fn):
+def setFN(fn, m_fich):
   m_fich[1] &= 0xC7
   m_fich[1] |= (fn << 3) & 0x38
 
 
-def setFT(ft):
+def setFT(ft, m_fich):
   m_fich[1] &= 0xF8
   m_fich[1] |= ft & 0x07
 
 
-def setMR(mr):
+def setMR(mr, m_fich):
   m_fich[2] &= 0xC7
   m_fich[2] |= (mr << 3) & 0x38
 
 
-def setVoIP(on):
+def setVoIP(on, m_fich):
   if (on):
     m_fich[2] |= 0x04
   else:
     m_fich[2] &= 0xFB
 
 
-def setDev(on):
+def setDev(on, m_fich):
   if (on):
     m_fich[2] |= 0x40
   else:
     m_fich[2] &= 0xBF
 
 
-def setDT(dt):
+def setDT(dt, m_fich):
   m_fich[2] &= 0xFC
   m_fich[2] |= dt & 0x03
 
 
-def setSQL(on):
+def setSQL(on, m_fich):
   if (on):
     m_fich[3] |= 0x80
   else:
     m_fich[3] &= 0x7F
 
 
-def setSQ(sq):
+def setSQ(sq, m_fich):
   m_fich[3] &= 0x80
   m_fich[3] |= sq & 0x7F
 
 
-def setBN(bn):
+def setBN(bn, m_fich):
   m_fich[0] &= 0xFC
   m_fich[0] |= bn & 0x03
 
 
-def setBT(bt):
+def setBT(bt, m_fich):
   m_fich[1] &= 0x3F
   m_fich[1] |= (bt << 6) & 0xC0
 
@@ -294,17 +293,19 @@ if __name__ == '__main__':
   b = b'YSFDIU5JAE    IU5JAE    ALL       !\xd4q\xc9cM\xd2\xc5x<\x03c\xed\xbc\xe6}\x9cq`r\x83\xeaa\xe3\x01\xcc\xbe\x8f\xd2\x9a\\\xcfM\xa3\xd8\x1fM }\xb0\xf4\xc3S\xd8\x1f\xa0\x1f=\xb0\xb4\xad\x1d\xb0:\x97\xc5mq\xb8,\xba\xb0:\x9d9\xe4\xb1\xad\xa4m]\xb9\xb9\x16\xd3\xd9\xad\xa4\xc8\x1f\xb9\xb9\x1b\xf4f\xda\xa3\x0cr\xe4\xc39\x99\xe3\x1a\xa3\x0b\x19\x15\x039\x99\x11\xe0\x9b\xc6?p\x0c\xe2\xe1\x8c\xd3[\xc6;[\x15\xa2\xe1\x84' 
   a=bytearray(b)
   
-  print(decode(a[40:]))
+  fich = []
+  
+  print(decode(a[40:]), fich)
 
-  print('FI = ' + str(getFI()))
-  print('DT = ' + str(getDT()))
-  print('FN/FT = ' + str(getFN()) + '/' + str(getFT()))
-  print('VoIP = ' + str(getVoIP()))
+  print('FI = ' + str(getFI(fich)))
+  print('DT = ' + str(getDT(fich)))
+  print('FN/FT = ' + str(getFN(fich)) + '/' + str(getFT(fich)))
+  print('VoIP = ' + str(getVoIP(fich)))
 
   setVoIP(True)
-  # a[40:] = encode(a[40:])
+  # a[40:] = encode(a[40:], fich)
   encode(a)
-  print(decode(a[40:]))
+  print(decode(a[40:]), fich)
   
   print(b)
   print(a)
