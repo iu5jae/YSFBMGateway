@@ -97,7 +97,7 @@ def process(data, source, DT, FI, FN, FT):
   return 0
 
 
-def ReplyToWiresxDxReqPacket(conn, tg, q):
+def ReplyToWiresxDxReqPacket(conn, tg, q, dsc):
   global seqn
   ok = True
   data = bytearray(129)
@@ -120,7 +120,13 @@ def ReplyToWiresxDxReqPacket(conn, tg, q):
     data[34:35] = b'1'
     data[35:36] = b'5'
     data[36:41] = str(tg).zfill(5).encode()
-    data[41:57] = ('TG-' + str(tg)).ljust(16).encode()
+    try:
+      d = dsc[tg].ljust(16)
+    except:
+      d = ''  
+    if (d == ''):
+      d = ('TG-' + str(tg)).ljust(16)  
+    data[41:57] = d.encode()
     data[57:60] = '099'.encode()
    # data[60:70] = 'DSC10 '.ljust(10).encode()
     data[70:84] = 'BM YSF DIRECT'.ljust(14).encode()
@@ -163,7 +169,7 @@ def ReplyToWiresxDxReqPacket(conn, tg, q):
   return ok  
 
 
-def ReplyToWiresxConnReqPacket(conn, tg, q):
+def ReplyToWiresxConnReqPacket(conn, tg, q, dsc):
   global seqn
   ok = True
   data = bytearray(91)
@@ -182,7 +188,13 @@ def ReplyToWiresxConnReqPacket(conn, tg, q):
   data[35:36] = b'5'
 
   data[36:41] = str(tg).zfill(5).encode()
-  data[41:57] = ('TG-' + str(tg)).ljust(16).encode()
+  try:
+    d = dsc[tg].ljust(16)
+  except:
+    d = ''  
+  if (d == ''):
+    d = ('TG-' + str(tg)).ljust(16)  
+  data[41:57] = d.encode()
   data[57:60] = '099'.encode()
   # data[60:70] = 'DSC10 '.ljust(10).encode()
   data[70:84] = 'BM YSF DIRECT'.ljust(14).encode()
@@ -317,7 +329,7 @@ def EncodeAndSendWiresxPacket(data, q):
   return
 
 
-def ReplyToWiresxAllReqPacket(q, TG_DG, start):
+def ReplyToWiresxAllReqPacket(q, TG_DG, start, dsc):
   global seqn
   ok = True
   data = bytearray(1200)
@@ -352,7 +364,16 @@ def ReplyToWiresxAllReqPacket(q, TG_DG, start):
       tg = 1
       s_warn = ' *'
     data[offset+1:offset+6] = str(tg).zfill(5).encode()
-    data[offset+6:offset+22] = ('TG-' + str(TG_DG[tg_dg_list[i + start]]) + '/' + str(tg_dg_list[i + start]) + s_warn).ljust(16).encode()
+    
+    try:
+     d = dsc[tg].ljust(16)
+    except:
+      d = ''  
+    if (d == ''):
+      d = ('TG-' + str(tg) + '/' + str(tg_dg_list[i + start])).ljust(16)  
+
+    
+    data[offset+6:offset+22] = d.ljust(16).encode()
     data[offset+22:offset+25] = b'099'
     data[offset+25:offset+35] = b'          '
     data[offset+35:offset+49] = b'DESCRIPTION   '

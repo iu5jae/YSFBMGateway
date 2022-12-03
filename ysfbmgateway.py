@@ -32,7 +32,7 @@ import ysfpayload
 import hashlib
 import wiresx
 
-ver = '221201'
+ver = '221203'
 
 a_connesso = False
 b_connesso = True
@@ -239,6 +239,8 @@ sock_b.bind((UDP_IP_B, UDP_PORT_B_R))
 
 TG=100*[0]
 DGID = 0
+DENY = []
+TG_DSC = {}
 
 def signal_handler(signal, frame):
   global run, a_connesso, b_connesso, arresto
@@ -255,18 +257,20 @@ def signal_handler(signal, frame):
     run = False
 
 def read_dgid_file(f):
-  global TG
+  global TG, DENY, TG_DSC
   error = False 
   try:
     file = open(f)
     TG_TMP = 100*[0]
+    DENY_TMP = []
+    TG_DSC_TMP = {}
     logging.info('Load DG-ID/TG from File')
     for row in file:
       content = row.strip()
       # valid line (not a comment)
       if ((len(content) > 2) and (content[0] != '#')):
         c_split = content.split(':')
-        if (len(c_split) == 2):
+        if (len(c_split) >= 2):
           try:
             dgid_int = int(c_split[0])
             tg_int = int(c_split[1])
@@ -276,13 +280,25 @@ def read_dgid_file(f):
               # valid record    
           if ((dgid_int > 0 ) and (dgid_int < 100)):
             TG_TMP[dgid_int] = tg_int
+            if (len(c_split) == 3):
+              dsc = c_split[2].strip().upper()
+              if (len(dsc) > 13):
+                dsc = dsc[0:13]
+              dsc = dsc + '/' + str(dgid_int)
+            else:
+              dsc = 'TG-' + str(tg_int) + '/' + str(dgid_int)
+            TG_DSC_TMP.update({tg_int:dsc})
+          
+          if (dgid_int == -1): # TG not allowed
+            DENY_TMP.insert(len(DENY_TMP), tg_int)                
     file.close() 
   except Exception as ex:
     error = True
+    logging.info('Failed to load DG-ID from File ' + str(ex) )
   if not error:
     TG = TG_TMP.copy() 
-  else:
-    logging.info('Failed to load DG-ID from File ' + str(ex) )
+    DENY = DENY_TMP.copy()
+    TG_DSC = TG_DSC_TMP.copy()
 
 
 
@@ -603,7 +619,7 @@ def rcv_b():
                   tg_i = int(tg_s)
                 except:
                   tg_i = 0
-                if ((tg_i > 1) and (tg_i != OPTIONS_A)):
+                if ((tg_i > 1) and (not (tg_i in DENY))):
                   logging.info('rcv_b: Received Wires-x Request for change TG to '+ str(tg_i))
                   OPTIONS_A = tg_i
                   dg_tmp = 0
@@ -693,6 +709,7 @@ def clock ():
        logging.info('clock: Back To Home at ' + str(OPTIONS_A))
        s_options = 'YSFO' + CALL_A.ljust(10) + 'group=' + str(OPTIONS_A)
        q_ba.put(str.encode(s_options))
+       wiresx.ReplyToWiresxConnReqPacket(a_connesso, OPTIONS_A, q_ab, TG_DSC)
        t_home_act = 0.0                      
      
      if (wx_cmd > 0):
@@ -702,15 +719,15 @@ def clock ():
        wx_t = 0.0
        if (wx_cmd == 1):
          wx_cmd = 0
-         wiresx.ReplyToWiresxDxReqPacket(a_connesso, OPTIONS_A, q_ab)
+         wiresx.ReplyToWiresxDxReqPacket(a_connesso, OPTIONS_A, q_ab, TG_DSC)
          
        if (wx_cmd == 2):
          wx_cmd = 0
-         wiresx.ReplyToWiresxAllReqPacket(q_ab, TG_DG_DICT, wx_start)  
+         wiresx.ReplyToWiresxAllReqPacket(q_ab, TG_DG_DICT, wx_start, TG_DSC)  
          
        if (wx_cmd == 30):   # wx_cmd == 3 with BM ACK
          wx_cmd = 0
-         wiresx.ReplyToWiresxConnReqPacket(a_connesso, OPTIONS_A, q_ab) 
+         wiresx.ReplyToWiresxConnReqPacket(a_connesso, OPTIONS_A, q_ab, TG_DSC) 
          
       
      time.sleep(0.1)
@@ -742,6 +759,7 @@ def keepalive():
 run = True
 logging.info('YSFBMGateway Ver. ' + ver + ': started')
 read_dgid_file(dgid_file)
+
 TG_DG_DICT = {}
 for i in range(100):
   if (TG[i] != 0):
