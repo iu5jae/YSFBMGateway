@@ -280,13 +280,17 @@ def read_dgid_file(f):
               # valid record    
           if ((dgid_int > 0 ) and (dgid_int < 100)):
             TG_TMP[dgid_int] = tg_int
+            if (len(str(tg_int)) > 5):
+              sep = '>'
+            else: 
+              sep = '/'  
             if (len(c_split) == 3):
               dsc = c_split[2].strip().upper()
               if (len(dsc) > 13):
                 dsc = dsc[0:13]
-              dsc = dsc + '/' + str(dgid_int)
+              dsc = dsc + sep + str(dgid_int)
             else:
-              dsc = 'TG-' + str(tg_int) + '/' + str(dgid_int)
+              dsc = 'TG-' + str(tg_int) + sep + str(dgid_int)
             TG_DSC_TMP.update({tg_int:dsc})
           
           if (dgid_int == -1): # TG not allowed
