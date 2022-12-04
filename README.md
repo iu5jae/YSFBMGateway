@@ -28,4 +28,4 @@ Again in Wires-X mode, for example, TG-2241/41 on the Yaesu radio display repres
 
 The ysfbmgateway.ini file contains the gateway configuration such as ports for connection with MMDVMHost, credentials for authentication to the BM master.
 
-YSFBMGateway requires python 3.7.
+YSFBMGateway requires python 3.7 or higher.
