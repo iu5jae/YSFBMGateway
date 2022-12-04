@@ -32,7 +32,7 @@ import ysfpayload
 import hashlib
 import wiresx
 
-ver = '221203'
+ver = '221204'
 
 a_connesso = False
 b_connesso = True
@@ -278,7 +278,7 @@ def read_dgid_file(f):
             dgid_int = 0
             error = True
               # valid record    
-          if ((dgid_int > 0 ) and (dgid_int < 100)):
+          if ((dgid_int > 0 ) and (dgid_int < 100) and (tg_int > 0) and len(str(tg_int)) < 10):
             TG_TMP[dgid_int] = tg_int
             if (len(str(tg_int)) > 5):
               sep = '>'
