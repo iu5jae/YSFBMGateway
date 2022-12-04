@@ -27,4 +27,4 @@ Compiling a dgid.db file can be useful for creating a usage standard.
 
 The ysfbmgateway.ini file contains the gateway configuration such as ports for connection with MMDVMHost, credentials for authentication to the BM master.
 
-YSFBMGateway requires python 3.7 or higher and some libraries installable via PIP.
+YSFBMGateway requires python 3.7.
