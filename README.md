@@ -13,7 +13,7 @@ Gateway features:
 
 The gateway reads a file called dgid.db which contains the management of the blocked TGs and the DG-IDs associated with the TGs, and relative description. This is the syntax:
 
-DG-ID(-1 to block):TG:DESCR(up to 13chars)
+DG-ID(-1 to block the TG):TG:DESCR(up to 13chars)
 
 If present, the description is displayed on the radio, otherwise only the TG (search in W-X mode).
 
