@@ -15,7 +15,7 @@ The gateway reads a file called dgid.db which contains the management of the blo
 
 DG-ID(-1 to block):TG:DESCR(up to 13chars)
 
-If present, the description is displayed on the radio, otherwise only the TG.
+If present, the description is displayed on the radio, otherwise only the TG (search in W-X mode).
 
 -1:222:IT NATIONAL<br>
 22:22292:ITALY MULTIP<br>
@@ -24,6 +24,7 @@ If present, the description is displayed on the radio, otherwise only the TG.
 
 For this example: impossible to send TG 222, TG 22292 and 2241 can also be called via DG-ID. TG 222555 can only be sent via DG-ID (greater than 5 digits).
 Compiling a dgid.db file can be useful for creating a usage standard.
+Again in Wires-X mode, for example, TG-2241/41 on the display represents the TG in use and (it is in dgid.db) the associated DG-ID.
 
 The ysfbmgateway.ini file contains the gateway configuration such as ports for connection with MMDVMHost, credentials for authentication to the BM master.
 
