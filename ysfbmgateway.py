@@ -762,7 +762,7 @@ read_dgid_file(dgid_file)
 
 TG_DG_DICT = {}
 for i in range(100):
-  if (TG[i] != 0):
+  if (TG[i] > 0):
     TG_DG_DICT.update({i:TG[i]})
 
 for i in range(100):

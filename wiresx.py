@@ -67,32 +67,35 @@ def process(data, source, DT, FI, FN, FT):
   if (FN == FT):
     valid = False
     cmd_len = (FN - 1) * 40 + 20
-    i = cmd_len - 1
-    while (wx_command[i] != 3):
-     i = i-1
-     
-    if (wx_command[i] == 3):
-      crc_a = crc.addCRC(wx_command, i+1)
-      if (crc_a == wx_command[i+1]):
-        valid = True
-           
-    if (not valid):
+    if (len(wx_command) < cmd_len):
       return 0
+    i = cmd_len - 1
+    while ((wx_command[i] != 3) and (i > 0)):
+     i = i-1
     
-    if (wx_command[1:4] == DX_REQ):
-      return 1
+    if (i > 0):
+      if (wx_command[i] == 3):
+        crc_a = crc.addCRC(wx_command, i+1)
+        if (crc_a == wx_command[i+1]):
+          valid = True
+           
+      if (not valid):
+        return 0
     
-    if (wx_command[1:4] == ALL_REQ):
-      return 2  
+      if (wx_command[1:4] == DX_REQ):
+        return 1
+    
+      if (wx_command[1:4] == ALL_REQ):
+        return 2  
   
-    if (wx_command[1:4] == CONN_REQ):
-      return 3  
+      if (wx_command[1:4] == CONN_REQ):
+        return 3  
   
-    if (wx_command[1:4] == DISC_REQ):
-      return 4  
+      if (wx_command[1:4] == DISC_REQ):
+        return 4  
   
-    if (wx_command[1:4] == CAT_REQ):
-      return 5  
+      if (wx_command[1:4] == CAT_REQ):
+        return 5  
   
   return 0
 
@@ -126,6 +129,9 @@ def ReplyToWiresxDxReqPacket(conn, tg, q, dsc):
       d = ''  
     if (d == ''):
       d = ('TG-' + str(tg)).ljust(16)  
+    if (len(str(tg)) > 5):
+      tg = 1
+    data[36:41] = str(tg).zfill(5).encode()  
     data[41:57] = d.encode()
     data[57:60] = '099'.encode()
    # data[60:70] = 'DSC10 '.ljust(10).encode()
@@ -187,13 +193,18 @@ def ReplyToWiresxConnReqPacket(conn, tg, q, dsc):
   data[34:35] = b'1'
   data[35:36] = b'5'
 
-  data[36:41] = str(tg).zfill(5).encode()
+ 
   try:
     d = dsc[tg].ljust(16)
   except:
     d = ''  
   if (d == ''):
     d = ('TG-' + str(tg)).ljust(16)  
+  
+  if (len(str(tg)) > 5):
+      tg = 1
+      
+  data[36:41] = str(tg).zfill(5).encode()  
   data[41:57] = d.encode()
   data[57:60] = '099'.encode()
   # data[60:70] = 'DSC10 '.ljust(10).encode()
@@ -359,11 +370,7 @@ def ReplyToWiresxAllReqPacket(q, TG_DG, start, dsc):
       data[offset+j] = 0x20 
     data[offset:offset+1] = b'5'
     tg = TG_DG[tg_dg_list[i + start]]
-    s_warn = ''
-    if (len(str(tg)) > 5):  #TG not selectable from wires-x command
-      tg = 1
-      s_warn = ' *'
-    data[offset+1:offset+6] = str(tg).zfill(5).encode()
+   
     
     try:
      d = dsc[tg].ljust(16)
@@ -372,6 +379,11 @@ def ReplyToWiresxAllReqPacket(q, TG_DG, start, dsc):
     if (d == ''):
       d = ('TG-' + str(tg) + '/' + str(tg_dg_list[i + start])).ljust(16)  
 
+    s_warn = ''
+    if (len(str(tg)) > 5):  #TG not selectable from wires-x command
+      tg = 1
+      s_warn = ' *'
+    data[offset+1:offset+6] = str(tg).zfill(5).encode()
     
     data[offset+6:offset+22] = d.ljust(16).encode()
     data[offset+22:offset+25] = b'099'
