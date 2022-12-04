@@ -17,10 +17,10 @@ DG-ID(-1 to block):TG:DESCR(up to 13chars)
 
 If present, the description is displayed on the radio, otherwise only the TG.
 
--1:222:IT NATIONAL
-22:22292:ITALY MULTIP
-41:2241:
-55:222555:CLS GRF
+-1:222:IT NATIONAL<br>
+22:22292:ITALY MULTIP<br>
+41:2241:<br>
+55:222555:CLS GRF<br>
 
 For this example: impossible to send TG 222, TG 22292 and 2241 can also be called via DG-ID. TG 222555 can only be sent via DG-ID (greater than 5 digits).
 Compiling a dgid.db file can be useful for creating a usage standard.
