@@ -112,7 +112,7 @@ def ReplyToWiresxDxReqPacket(conn, tg, q, dsc):
   seqn = (seqn + 1) & 0xFF
   data[1:5] = DX_RESP 
 
-  data[5:10] = str(m_id).encode()
+  data[5:10] = str(m_id).zfill(5).encode()
   data[10:20] = m_node.ljust(10).encode()
   data[20:34] = str(m_name).ljust(14).encode()
   
@@ -186,7 +186,7 @@ def ReplyToWiresxConnReqPacket(conn, tg, q, dsc):
   data[0] = seqn
   seqn = (seqn + 1) & 0xFF
   data[1:5] = CONN_RESP 
-  data[5:10] = str(m_id).encode()
+  data[5:10] = str(m_id).zfill(5).encode()
   data[10:20] = m_node.ljust(10).encode()
   data[20:34] = str(m_name).ljust(14).encode()
   
@@ -351,7 +351,7 @@ def ReplyToWiresxAllReqPacket(q, TG_DG, start, dsc):
   data[5:6] = b'2'
   data[6:7] = b'1'
   
-  data[7:12] = str(m_id).encode()
+  data[7:12] = str(m_id).zfill(5).encode()
   data[12:22] = m_node.ljust(10).encode()
   
   total = len(TG_DG)
