@@ -32,28 +32,44 @@ import ysfpayload
 import hashlib
 import wiresx
 
-ver = '221204'
+ver = '230108'
 
 a_connesso = False
 b_connesso = True
+c_connesso = False
+
 lock = False
 t_lock = 0.0
 
 a_tf = 0.0 # tempo trascorso da ultimo pacchetto
 b_tf = 0.0
+c_tf = 0.0
+
+# A - YSF Direct (BM server)
+# B - MMDVMHost
+# C - YSF Network (Reflector)
 
 q_ab = queue.Queue() # coda pacchetti A -> B 
 q_ba = queue.Queue() # coda pacchetti B -> A 
+q_bc = queue.Queue() # coda pacchetti B -> C 
+
+mode = 1 # mode 1 > YSF Direct; 2 > YSF Net
 
 lock_a = threading.Lock()
 lock_b = threading.Lock()
+lock_c = threading.Lock()
 lock_a_time = threading.Lock()
 lock_b_time = threading.Lock()
+lock_c_time = threading.Lock()
 lock_conn_a = threading.Lock()
 lock_conn_b = threading.Lock()
+lock_conn_c = threading.Lock()
 lock_dir = threading.Lock()
 a_b_dir = False # direzione attiva A --> B
 b_a_dir = False # direzione attiva B --> A
+b_c_dir = False # direzione attiva B --> C
+c_b_dir = False # direzione attiva C --> B
+
 bufferSize = 2048
 wx_cmd = 0 
 wx_t = 0
@@ -140,6 +156,7 @@ ack_tout = 30.0
   
 ack_time_a = ack_tout 
 ack_time_b = ack_tout 
+ack_time_c = ack_tout 
 
 t_home_act = 0.0
 
@@ -184,9 +201,6 @@ CALL_B = config['General']['Callsign']
 
 SUF_B = config['General']['Suffix'] 
 
-REM_PREF_B = 0
-AUTH_A = 1
-
 ##log
 logging.basicConfig(handlers=[RotatingFileHandler(log_file, maxBytes=log_maxBytes, backupCount=log_backupCount)], format='%(asctime)s %(message)s', datefmt='%d/%m/%Y %H:%M:%S', level=logging.INFO)
 
@@ -195,23 +209,14 @@ while (len(CALL_A) != 10):
 	CALL_A += ' '
 
 while (len(CALL_B) != 10):
-	CALL_B += ' '
-if (AUTH_A == 1):    
-  MESSAGE_A = 'YSFL' + CALL_A # stringa connessione "A"
-else:  
-  MESSAGE_A = 'YSFP' + CALL_A # stringa connessione "A"
-
+	CALL_B += ' '                            
+    
+    
+MESSAGE_A = 'YSFL' + CALL_A # stringa connessione "A"
 MESSAGE_B = 'YSFP' + CALL_B   # stringa connessione "B"
 
-DISCONN_A = 'YSFU'  # stringa disconnessione "A"
+
 DISCONN_B = 'YSFU'  # stringa disconnessione "B"
-
-if (AUTH_A == 1):
-  ACK_A =   '              '
-else:  
-  ACK_A = 'YSFPREFLECTOR '
-#ACK_A =   'YSFPBM_2222  '
-
 
 ACK_B = 'YSFPREFLECTOR '
 
@@ -220,30 +225,42 @@ ACK_B = 'YSFPREFLECTOR '
 
 keepalive_str_a = 'YSFP' + CALL_A
 keepalive_str_b = 'YSFP' + CALL_B 
+keepalive_str_c = 'YSFP' + CALL_A
 
-
-# socket connessione A
+# socket for YSF Direct
 sock_a = socket.socket(socket.AF_INET, 
                         socket.SOCK_DGRAM) 
 
 sock_a.settimeout(ack_tout + 10.0)
 
-# socket connessione B
+
+# socket for YSF net
+sock_c = socket.socket(socket.AF_INET, 
+                        socket.SOCK_DGRAM) 
+
+sock_c.settimeout(ack_tout + 10.0)
+
+
+# socket for MMDVMHost connection
 sock_b = socket.socket(socket.AF_INET, 
                         socket.SOCK_DGRAM) 
 
 sock_b.setblocking(1)
 sock_b.bind((UDP_IP_B, UDP_PORT_B_R))
 
+MESSAGE_C = 'YSFP' + CALL_A # stringa connessione "C"
+ACK_C = 'YSFPREFLECTOR '
+DISCONN_C = 'YSFU'  # stringa disconnessione "C"
 
 
-TG=100*[0]
+TG=100*[(0,0)]
 DGID = 0
 DENY = []
 TG_DSC = {}
 
+
 def signal_handler(signal, frame):
-  global run, a_connesso, b_connesso, arresto
+  global run, a_connesso, b_connesso, c_connesso, arresto
   logging.info('Shutdown in progress ...')
   arresto = True
   time.sleep(0.5)
@@ -252,16 +269,40 @@ def signal_handler(signal, frame):
     logging.info('Logout from BM server')
     time.sleep(1)
     a_connesso = False
-    b_connesso = False
-  if ((not a_connesso) and (not b_connesso)):
+  if c_connesso:
+    q_bc.put(str.encode(DISCONN_C))
+    logging.info('Logout from YSF Reflector')
+    time.sleep(1)
+    c_connesso = False
+  b_connesso = False
+  if ((not a_connesso) and (not b_connesso) and (not c_connesso)):
     run = False
+
+### not used ###
+def get_ysf_info(f, id):
+  file_ysf = open(f)
+  info = []
+  for row in file_ysf:
+    content = row.strip()
+    # valid line (not a comment)
+    if ((len(content) > 2) and (content[0] != '#')):
+      c_split = content.split(';')
+      if (c_split[0] == str(id).zfill(5)):
+        info = c_split
+        break
+
+  file_ysf.close()
+  return info
+
 
 def read_dgid_file(f):
   global TG, DENY, TG_DSC
   error = False 
+  n_dir = 0
+  n_ysf = 0
   try:
     file = open(f)
-    TG_TMP = 100*[0]
+    TG_TMP = 100*[(0, 0)]
     DENY_TMP = []
     TG_DSC_TMP = {}
     logging.info('Load DG-ID/TG from File')
@@ -273,29 +314,57 @@ def read_dgid_file(f):
         if (len(c_split) >= 2):
           try:
             dgid_int = int(c_split[0])
-            tg_int = int(c_split[1])
+            mod_s = c_split[1].split('#')
+            if (len(mod_s) == 1):   
+              tg_int = int(c_split[1])
+              mode_tmp = 1
+            if ((len(mod_s) == 2) and (mod_s[0].upper() == 'BM')):
+              tg_int = int(mod_s[1])
+              mode_tmp = 1
+            if ((len(mod_s) == 2) and (mod_s[0].upper() == 'YSF')):
+              tg_int = int(mod_s[1])
+              mode_tmp = 2              
           except:
             dgid_int = 0
             error = True
               # valid record    
           if ((dgid_int > 0 ) and (dgid_int < 100) and (tg_int > 0) and len(str(tg_int)) < 10):
-            TG_TMP[dgid_int] = tg_int
-            if (len(str(tg_int)) > 5):
+            # TG_TMP[dgid_int] = (1, tg_int, )
+            if ((len(str(tg_int)) > 5) or (mode_tmp == 2)):
               sep = '>'
             else: 
               sep = '/'  
-            if (len(c_split) == 3):
-              dsc = c_split[2].strip().upper()
+            if (((len(c_split) == 3) and (mode_tmp == 1)) or (mode_tmp == 2)) :
+              if (mode_tmp == 1):
+                dsc = c_split[2].strip().upper()
+              if (mode_tmp == 2):
+                if (len(c_split[2].strip()) > 0):
+                  dsc = c_split[2].strip().upper()
+                else:
+                  dsc = 'YSF#' + str(tg_int)  
               if (len(dsc) > 13):
                 dsc = dsc[0:13]
               dsc = dsc + sep + str(dgid_int)
             else:
               dsc = 'TG-' + str(tg_int) + sep + str(dgid_int)
-            TG_DSC_TMP.update({tg_int:dsc})
-          
+            
+            if (mode_tmp == 1):
+              n_dir += 1
+              TG_TMP[dgid_int] = (1, tg_int, dsc)
+              TG_DSC_TMP.update({tg_int:dsc})
+            if (mode_tmp == 2):
+              n_ysf += 1
+              TG_TMP[dgid_int] = (2, tg_int, dsc, c_split[3], int(c_split[4]))
+              TG_DSC_TMP.update({tg_int:dsc})
+            
+            
+            
           if (dgid_int == -1): # TG not allowed
             DENY_TMP.insert(len(DENY_TMP), tg_int)                
-    file.close() 
+    file.close()
+    # print(TG_TMP)
+    # print(TG_DSC_TMP)
+     
   except Exception as ex:
     error = True
     logging.info('Failed to load DG-ID from File ' + str(ex) )
@@ -303,21 +372,23 @@ def read_dgid_file(f):
     TG = TG_TMP.copy() 
     DENY = DENY_TMP.copy()
     TG_DSC = TG_DSC_TMP.copy()
-
+    logging.info('Loaded ' + str(n_dir) + ' YSF Direct and ' + str(n_ysf) + ' YSF Network DGID')
 
 
 def conn (sock, lato):
-    global a_connesso, ACK_A, DGID, TG
+    global a_connesso, ACK_A, DGID, TG, UDP_IP_A_N, DISCONN_A
+    global c_connesso, ACK_C, UDP_IP_C_N, DISCONN_C 
   
     # Connection to BM YSF DIRECT
-    if ((lato == 'A') and (AUTH_A == 1)):
+    if (lato == 'A'):
       for i in range(100):
-        if (TG[i] == OPTIONS_A):
+        if (TG[i][1] == OPTIONS_A):
           DGID = i
           break
           
       logging.info('conn: Try to connect to BM Server') 
       try:
+        sock.connect((UDP_IP_A, UDP_PORT_A))
         sock.sendto(str.encode(MESSAGE_A), (UDP_IP_A, UDP_PORT_A))
         # print(str.encode(MESSAGE_A))
         msgFromServer = sock.recvfrom(bufferSize)
@@ -331,6 +402,7 @@ def conn (sock, lato):
         # print(msg)
         if ((len(msg) == 16) and (msg[0:6] == b'YSFACK')):
           ACK_A = 'YSFP' + msg[6:16].decode("utf-8") 
+          DISCONN_A = 'YSFU' + msg[6:16].decode("utf-8") 
           key = msgFromServer[0][16:20]
           s_auth = bytes('YSFK' + CALL_A.ljust(10), 'utf-8') + hashlib.sha256(key + PASSWORD_A).digest() 
           
@@ -356,6 +428,7 @@ def conn (sock, lato):
             if ((not sock_err) and (len(msg) == 16) and (msg[0:16] == str.encode('YSFACK' + ACK_A[4:14]))):
               logging.info('BM Server Connected on TG ' + str(OPTIONS_A))
               lock_conn_a.acquire()
+              UDP_IP_A_N = socket.gethostbyname(UDP_IP_A)
               a_connesso = True
               lock_conn_a.release()  
                         
@@ -364,7 +437,33 @@ def conn (sock, lato):
               lock_a.release()
 
 
-        
+    if (lato == 'C'):
+      logging.info('conn: provo a connettere C') 
+      try:
+        UDP_IP_C_N = socket.gethostbyname(UDP_IP_C)
+        sock.connect((UDP_IP_C, UDP_PORT_C))
+        sock.sendto(str.encode(MESSAGE_C), (UDP_IP_C, UDP_PORT_C))
+#        msgFromServer = sock.recvfrom(bufferSize)
+        sock_err = False
+      except Exception as e:
+        logging.error('conn: Errore connessione C ' + str(e))
+        sock_err = True
+#      if (not sock_err):  
+#        
+##        # scelgo la stringa giusta da verificare
+#        
+#        msg = msgFromServer[0][0:14]
+#        
+#        if (msg == str.encode(ACK_C)):
+#          logging.info('connesso C')
+#          lock_conn_c.acquire()
+#          UDP_IP_C_N = socket.gethostbyname(UDP_IP_C)
+#          c_connesso = True
+#          lock_conn_c.release()    
+#          lock_c.acquire()
+#          ack_time_c = 0
+#          lock_c.release()
+       
 
 # invio dati a "A"
 def send_a():
@@ -373,16 +472,28 @@ def send_a():
     try: 
       sock_a.sendto(msg, (UDP_IP_A, UDP_PORT_A))
     except Exception as e:
-      logging.error('send_a: Error sending data to BM Server ' + str(e))
+      logging.error('send_a: Error sending data to BM Server: ' + str(e))
+      
+      
+# invio dati a "C"
+def send_c():
+  while True:
+    msg = q_bc.get()
+    try: 
+      sock_c.sendto(msg, (UDP_IP_C, UDP_PORT_C))
+    except Exception as e:
+      logging.error('send_c: Error sending data to YSF Network: ' + str(e))
+
 
 # invio dati a "B" 
 def send_b():
+  global mode
   while True:
     msg = q_ab.get()
     try: 
       sock_b.sendto(msg, (UDP_IP_B, UDP_PORT_B_S))
     except Exception as e:
-      logging.error('send_b: Error sending data to MMDVMHost ' + str(e))
+      logging.error('send_b: Error sending data to MMDVMHost: ' + str(e))
 
 def rcv_a():
   global a_connesso, b_connesso, a_b_dir, b_a_dir, ack_time_a, a_tf, b_tf, lock, ACK_A, DGID, dgid_prefix, wx_cmd
@@ -390,87 +501,89 @@ def rcv_a():
     if a_connesso:  
       try:
         msgFromServer = sock_a.recvfrom(bufferSize)
-        #print(msgFromServer[0])        
-        if ((len(msgFromServer[0]) == 16) and (msgFromServer[0][0:16] == str.encode('YSFACK' + ACK_A[4:14]))):
-          logging.error('TG changed to ' + str(OPTIONS_A))
-          if (wx_cmd == 3):
-            wx_cmd = 30
-         # lock = False 
-         # print('ricevuto ACK') 
+        if ((msgFromServer[1][0] == UDP_IP_A_N) and (msgFromServer[1][1] == UDP_PORT_A)):
+          # print(msgFromServer)        
+          if True:
+            if ((len(msgFromServer[0]) == 16) and (msgFromServer[0][0:16] == str.encode('YSFACK' + ACK_A[4:14]))):
+              logging.error('TG changed to ' + str(OPTIONS_A))
+              if (wx_cmd == 3):
+                wx_cmd = 30
+             # lock = False 
+             # print('ricevuto ACK') 
         
-        if ((len(msgFromServer[0]) == 16) and (msgFromServer[0][0:16] == str.encode('YSFNAK' + ACK_A[4:14]))):
-          logging.error('TG changing rejected by BM Server ')  
-          DGID = 0
+            if ((len(msgFromServer[0]) == 16) and (msgFromServer[0][0:16] == str.encode('YSFNAK' + ACK_A[4:14]))):
+              logging.error('TG changing rejected by BM Server ')  
+              DGID = 0
         
-        if ((len(msgFromServer[0]) == 14) and (msgFromServer[0][0:14] == str.encode(ACK_A))):
+          if ((len(msgFromServer[0]) == 14) and (msgFromServer[0][0:14] == str.encode(ACK_A))):
           
-          lock_a.acquire()
-          ack_time_a = 0
-          lock_a.release()
+            lock_a.acquire()
+            ack_time_a = 0
+            lock_a.release()
        
-        if (msgFromServer[0][0:4] == b'YSFD'):
-          #print(msgFromServer[0])
-          fich_a = ysffich.decode(msgFromServer[0][40:])
-          if fich_a: 
-            FI = ysffich.getFI(fich_a)
-            SQL = ysffich.getSQ(fich_a)
-            VOIP = ysffich.getVoIP(fich_a)
-            FN = ysffich.getFN(fich_a)
-            DT = ysffich.getDT(fich_a)
-            # print('FI: ' + str(ysffich.getFI()) + ' - DT: ' + str(ysffich.getDT()))
-            # print(msgFromServer[0])
-            # print('*****')
-            if True:
-              ysffich.setSQ(0,fich_a)
-              ysffich.setVoIP(False, fich_a)
-              bya_msg = bytearray(msgFromServer[0])   
-              ysffich.encode(bya_msg, fich_a)
-              if ((not a_b_dir) and (not b_a_dir) and (FI != 2)):  # new stream and bridge free            
-                if (FI == 0):  # valid HC
-                  lock_dir.acquire()
-                  a_b_dir = True
-                  b_a_dir = False
-                  lock_dir.release()
-                else: # HC missing  
-                  logging.error('rcv_a: add missing HC at ' + bya_msg[4:14].decode() + ' from ' + bya_msg[14:24].decode() + ' to ' + bya_msg[24:34].decode())
-                  # print(bya_msg)
-                  data = [0] * 120
-                  csd1 = [0] * 20
-                  csd2 = [0] * 20
-                  csd1 = (bya_msg[24:34] + bya_msg[14:24])  # destination/source
-                  csd2 = ('          ' + '          ').encode()  # downlink/uplink
-                  try:
-                    ysfpayload.writeHeader(data, csd1, csd2)
-                    bya_msg[35 + ysfpayload.YSF_SYNC_LENGTH_BYTES + ysfpayload.YSF_FICH_LENGTH_BYTES:] = data[ysfpayload.YSF_SYNC_LENGTH_BYTES + ysfpayload.YSF_FICH_LENGTH_BYTES:]
-                  except Exception as e:
-                    logging.error('rcv_a: error writing missing HC ' + str(e))
-                  # print('setto direzioni')
-                  ysffich.setFI(0, fich_a)
-                  ysffich.encode(bya_msg, fich_a)
-                  # print(bya_msg)
-                  lock_dir.acquire()
-                  a_b_dir = True
-                  b_a_dir = False
-                  lock_dir.release()
+          if ((msgFromServer[0][0:4] == b'YSFD') and (mode == 1)):
+            #print(msgFromServer[0])
+            fich_a = ysffich.decode(msgFromServer[0][40:])
+            if fich_a: 
+              FI = ysffich.getFI(fich_a)
+              SQL = ysffich.getSQ(fich_a)
+              VOIP = ysffich.getVoIP(fich_a)
+              FN = ysffich.getFN(fich_a)
+              DT = ysffich.getDT(fich_a)
+              # print('FI: ' + str(ysffich.getFI()) + ' - DT: ' + str(ysffich.getDT()))
+              # print(msgFromServer[0])
+              # print('*****')
+              if True:
+                ysffich.setSQ(0,fich_a)
+                ysffich.setVoIP(False, fich_a)
+                bya_msg = bytearray(msgFromServer[0])   
+                ysffich.encode(bya_msg, fich_a)
+                if ((not a_b_dir) and (not b_a_dir) and (FI != 2)):  # new stream and bridge free            
+                  if (FI == 0):  # valid HC
+                    lock_dir.acquire()
+                    a_b_dir = True
+                    b_a_dir = False
+                    lock_dir.release()
+                  else: # HC missing  
+                    logging.error('rcv_a: add missing HC at ' + bya_msg[4:14].decode() + ' from ' + bya_msg[14:24].decode() + ' to ' + bya_msg[24:34].decode())
+                    # print(bya_msg)
+                    data = [0] * 120
+                    csd1 = [0] * 20
+                    csd2 = [0] * 20
+                    csd1 = (bya_msg[24:34] + bya_msg[14:24])  # destination/source
+                    csd2 = ('          ' + '          ').encode()  # downlink/uplink
+                    try:
+                      ysfpayload.writeHeader(data, csd1, csd2)
+                      bya_msg[35 + ysfpayload.YSF_SYNC_LENGTH_BYTES + ysfpayload.YSF_FICH_LENGTH_BYTES:] = data[ysfpayload.YSF_SYNC_LENGTH_BYTES + ysfpayload.YSF_FICH_LENGTH_BYTES:]
+                    except Exception as e:
+                      logging.error('rcv_a: error writing missing HC ' + str(e))
+                    # print('setto direzioni')
+                    ysffich.setFI(0, fich_a)
+                    ysffich.encode(bya_msg, fich_a)
+                    # print(bya_msg)
+                    lock_dir.acquire()
+                    a_b_dir = True
+                    b_a_dir = False
+                    lock_dir.release()
                                     
-              lock_b_time.acquire()
-              b_tf = 0.0
-              lock_b_time.release()
-              if (a_connesso and b_connesso and a_b_dir and not lock):
-               # bya_msg[4:14] = str.encode(CALL_B.ljust(10))
-                if ((dgid_prefix > 0) and (DGID > 0)):
-                  if (FI == 0): 
-                    data_p = bya_msg[35:]
-                    if (ysfpayload.processheaderdata(bya_msg[35:])):
-                      csd1 = ((ysfpayload.m_dest).ljust(10) + (str(DGID) + '/' + str(bya_msg[14:24], 'utf-8').strip()).ljust(10)).encode()
-                      csd2 = (ysfpayload.m_downlink.ljust(10) + ysfpayload.m_uplink.ljust(10)).encode()
-                      ysfpayload.writeHeader(data_p, csd1, csd2)
-                      data_mod = bytearray(155)
-                      data_mod[:35] = bya_msg[:35]
-                      data_mod[35:] = data_p  
-                      q_ab.put(bytes(data_mod))
-                  else:
-                     if ((FN == 1) and (DT == 2)):
+                lock_b_time.acquire()
+                b_tf = 0.0
+                lock_b_time.release()
+                if (a_connesso and b_connesso and a_b_dir and not lock):
+                 # bya_msg[4:14] = str.encode(CALL_B.ljust(10))
+                  if ((dgid_prefix > 0) and (DGID > 0)):
+                    if (FI == 0): 
+                      data_p = bya_msg[35:]
+                      if (ysfpayload.processheaderdata(bya_msg[35:])):
+                        csd1 = ((ysfpayload.m_dest).ljust(10) + (str(DGID) + '/' + str(bya_msg[14:24], 'utf-8').strip()).ljust(10)).encode()
+                        csd2 = (ysfpayload.m_downlink.ljust(10) + ysfpayload.m_uplink.ljust(10)).encode()
+                        ysfpayload.writeHeader(data_p, csd1, csd2)
+                        data_mod = bytearray(155)
+                        data_mod[:35] = bya_msg[:35]
+                        data_mod[35:] = data_p  
+                        q_ab.put(bytes(data_mod))
+                    else:
+                      if ((FN == 1) and (DT == 2)):
                         data_p = bya_msg[35:]
                         src = (str(DGID) + '/' + str(bya_msg[14:24], 'utf-8').strip()).ljust(10).encode()
                         ysfpayload.writeVDMmode2Data(data_p, src)
@@ -478,27 +591,138 @@ def rcv_a():
                         data_mod[:35] = bya_msg[:35]
                         data_mod[35:] = data_p  
                         q_ab.put(bytes(data_mod))
-                     else:
-                       q_ab.put(bytes(bya_msg))    
-                else:
-                  q_ab.put(bytes(bya_msg))    
+                      else:
+                        q_ab.put(bytes(bya_msg))    
+                  else:
+                    q_ab.put(bytes(bya_msg))    
        
-              if (FI == 2):
-                lock_dir.acquire()
-                a_b_dir = False
-                b_a_dir = False
-                lock_dir.release()  
-          else:
-            logging.error('rcv_a: error decoding FICH')  
+                if (FI == 2):
+                  lock_dir.acquire()
+                  a_b_dir = False
+                  b_a_dir = False
+                  lock_dir.release()  
+            else:
+              logging.error('rcv_a: error decoding FICH')  
       except Exception as e:
         logging.error('rcv_a: ' + str(e))
         
     else:
       time.sleep(1.0)   
 
+def rcv_c():
+  global c_connesso, b_connesso, c_b_dir, b_c_dir, ack_time_c, c_tf, b_tf, lock, ACK_C, DGID, dgid_prefix
+  global mode
+  while True:
+    if True:  
+      try:
+        msgFromServer = sock_c.recvfrom(bufferSize)
+        if ((msgFromServer[1][0] == UDP_IP_C_N) and (msgFromServer[1][1] == UDP_PORT_C)):
+          # print(msgFromServer)        
+          
+          if ((len(msgFromServer[0]) == 14) and (msgFromServer[0][0:14] == str.encode(ACK_C))):
+            if not c_connesso:
+              logging.info('rcv_c: connesso C')
+              c_connesso = True
+            lock_c.acquire()
+            ack_time_c = 0
+            lock_c.release()
+       
+          if ((msgFromServer[0][0:4] == b'YSFD') and (mode == 2) and c_connesso):
+            # print(msgFromServer[0])
+            fich_c = ysffich.decode(msgFromServer[0][40:])
+            if fich_c: 
+              FI = ysffich.getFI(fich_c)
+              SQL = ysffich.getSQ(fich_c)
+              VOIP = ysffich.getVoIP(fich_c)
+              FN = ysffich.getFN(fich_c)
+              DT = ysffich.getDT(fich_c)
+              # print('FI: ' + str(ysffich.getFI()) + ' - DT: ' + str(ysffich.getDT()))
+              # print(msgFromServer[0])
+              # print('*****')
+              if True:
+                ysffich.setSQ(0,fich_c)
+                ysffich.setVoIP(False, fich_c)
+                bya_msg = bytearray(msgFromServer[0])   
+                ysffich.encode(bya_msg, fich_c)
+                if ((not c_b_dir) and (not b_c_dir) and (FI != 2)):  # new stream and bridge free            
+                  if (FI == 0):  # valid HC
+                    lock_dir.acquire()
+                    c_b_dir = True
+                    b_c_dir = False
+                    lock_dir.release()
+                  else: # HC missing  
+                    logging.error('rcv_c: add missing HC at ' + bya_msg[4:14].decode() + ' from ' + bya_msg[14:24].decode() + ' to ' + bya_msg[24:34].decode())
+                    # print(bya_msg)
+                    data = [0] * 120
+                    csd1 = [0] * 20
+                    csd2 = [0] * 20
+                    csd1 = (bya_msg[24:34] + bya_msg[14:24])  # destination/source
+                    csd2 = ('          ' + '          ').encode()  # downlink/uplink
+                    try:
+                      ysfpayload.writeHeader(data, csd1, csd2)
+                      bya_msg[35 + ysfpayload.YSF_SYNC_LENGTH_BYTES + ysfpayload.YSF_FICH_LENGTH_BYTES:] = data[ysfpayload.YSF_SYNC_LENGTH_BYTES + ysfpayload.YSF_FICH_LENGTH_BYTES:]
+                    except Exception as e:
+                      logging.error('rcv_a: error writing missing HC ' + str(e))
+                    # print('setto direzioni')
+                    ysffich.setFI(0, fich_c)
+                    ysffich.encode(bya_msg, fich_c)
+                    # print(bya_msg)
+                    lock_dir.acquire()
+                    c_b_dir = True
+                    b_c_dir = False
+                    lock_dir.release()
+                                    
+                lock_c_time.acquire()
+                c_tf = 0.0
+                lock_c_time.release()
+                if (c_connesso and b_connesso and c_b_dir and not lock):
+                 # bya_msg[4:14] = str.encode(CALL_B.ljust(10))
+                  if ((dgid_prefix > 0) and (DGID > 0)):
+                    if (FI == 0): 
+                      data_p = bya_msg[35:]
+                      if (ysfpayload.processheaderdata(bya_msg[35:])):
+                        csd1 = ((ysfpayload.m_dest).ljust(10) + (str(DGID) + '/' + str(bya_msg[14:24], 'utf-8').strip()).ljust(10)).encode()
+                        csd2 = (ysfpayload.m_downlink.ljust(10) + ysfpayload.m_uplink.ljust(10)).encode()
+                        ysfpayload.writeHeader(data_p, csd1, csd2)
+                        data_mod = bytearray(155)
+                        data_mod[:35] = bya_msg[:35]
+                        data_mod[35:] = data_p  
+                        q_ab.put(bytes(data_mod))
+                    else:
+                      if ((FN == 1) and (DT == 2)):
+                        data_p = bya_msg[35:]
+                        src = (str(DGID) + '/' + str(bya_msg[14:24], 'utf-8').strip()).ljust(10).encode()
+                        ysfpayload.writeVDMmode2Data(data_p, src)
+                        data_mod = bytearray(155)
+                        data_mod[:35] = bya_msg[:35]
+                        data_mod[35:] = data_p  
+                        q_ab.put(bytes(data_mod))
+                      else:
+                        q_ab.put(bytes(bya_msg))    
+                  else:
+                    q_ab.put(bytes(bya_msg))    
+       
+                if (FI == 2):
+                  lock_dir.acquire()
+                  c_b_dir = False
+                  b_c_dir = False
+                  lock_dir.release()  
+            else:
+              logging.error('rcv_c: error decoding FICH')  
+      except Exception as e:
+        if c_connesso:
+          logging.error('rcv_c: ' + str(e))
+        pass
+        
+    else:
+      time.sleep(1.0)   
+
+
+
 
 def rcv_b():
-  global a_connesso, b_connesso, a_b_dir, b_a_dir, ack_time_b, a_tf, b_tf, OPTIONS_A, lock, TG, t_lock, DGID, t_home_act, wx_cmd, wx_t, wx_start
+  global a_connesso, b_connesso, c_connesso, a_b_dir, b_a_dir, ack_time_a, ack_time_b, a_tf, b_tf, OPTIONS_A, lock, TG, t_lock, DGID, t_home_act, wx_cmd, wx_t, wx_start
+  global UDP_IP_A, UDP_PORT_A, sock_a, mode, UDP_IP_C, UDP_PORT_C
   while True:
     if True:
       try:
@@ -530,13 +754,39 @@ def rcv_b():
               ysffich.encode(bya_msg, fich_b)
               #print('a > b ' +  str(a_b_dir) + ' b > a ' + str(b_a_dir))
               if ((not a_b_dir) and (not b_a_dir) and (FI != 2)):  # header and bridge free
-                if ((SQL != 0) and (TG[SQL] != OPTIONS_A) and (SQL < 100)):
-                  # cambio TG
-                  if (TG[SQL] != 0): 
-                    OPTIONS_A = TG[SQL]
+                if ((SQL != 0) and (TG[SQL][1] != OPTIONS_A) and (SQL < 100)):
+                  # cambio TG                    
+                  if (TG[SQL][1] != 0): 
+                    OPTIONS_A = TG[SQL][1]
                     DGID = SQL
-                    s_options = 'YSFO' + CALL_A.ljust(10) + 'group=' + str(OPTIONS_A)
-                    q_ba.put(str.encode(s_options))                    
+                    if (TG[SQL][0] != mode):  # Devo cambiare modo
+                      if (TG[SQL][0] == 1): # Direct 
+                        mode = 1
+                        q_bc.put(str.encode(DISCONN_C )) 
+                        c_connesso = False
+                        logging.error('rcv_b: Set Network to YSF Direct')
+                    
+                      if (TG[SQL][0] == 2): # YSF Net 
+                        mode = 2
+                        logging.error('rcv_b: Change Network to YSF')
+                    
+                    
+                    if (mode == 1):
+                      s_options = 'YSFO' + CALL_A.ljust(10) + 'group=' + str(OPTIONS_A)
+                      q_ba.put(str.encode(s_options))                    
+                    
+                    if (mode == 2):
+                      ack_time_c = 0.0
+                      # set reflector IP and PORT 
+                      if c_connesso:
+                        q_bc.put(str.encode(DISCONN_C )) 
+                        c_connesso = False  
+                        time.sleep(1.0)
+                      UDP_IP_C = TG[SQL][3] 
+                      UDP_PORT_C = TG[SQL][4]
+                      conn (sock_c, 'C') 
+                      logging.error('rcv_b: Set Network to YSF Net at YSF#' + str(TG[SQL][1]) + ' with DGID ' + str(SQL))
+                    
                     lock = True
                     t_lock = 0.0
                   
@@ -567,13 +817,19 @@ def rcv_b():
                   b_a_dir = True
                   lock_dir.release()
 
+              if (SQL != 0):
+                ysffich.setSQL(0, fich_b)
+                ysffich.encode(bya_msg, fich_b)
+
               lock_a_time.acquire()
               a_tf = 0.0
               lock_a_time.release()
               if (a_connesso and b_connesso and b_a_dir and not lock):
              #   bya_msg[4:14] = str.encode(CALL_A.ljust(10))
-                q_ba.put(bytes(bya_msg))    
-            
+                if (mode == 1):
+                  q_ba.put(bytes(bya_msg))    
+                if (mode == 2):
+                  q_bc.put(bytes(bya_msg))  
    
               if (FI == 2):
                 lock_dir.acquire()
@@ -616,6 +872,11 @@ def rcv_b():
                 
               if (cmd == 3):
                 logging.info('rcv_b: Received Wires-x CON_REQ Command')
+                if (mode == 2):
+                  mode = 1
+                  q_bc.put(str.encode(DISCONN_C )) 
+                  c_connesso = False
+                  logging.error('rcv_b: Set Network to YSF Direct')
                 tg_s = ''
                 for i in wiresx.wx_command[5:10]:
                   tg_s+=chr(i)
@@ -628,7 +889,7 @@ def rcv_b():
                   OPTIONS_A = tg_i
                   dg_tmp = 0
                   for i in range(100):
-                    if (TG[i] == OPTIONS_A):
+                    if (TG[i][1] == OPTIONS_A):
                       dg_tmp = i
                       break
                   
@@ -663,7 +924,8 @@ def rcv_b():
 
 # clock per gestione keepalive
 def clock ():
- global ack_time_a, ack_time_b, ack_tout, a_tf, b_tf, a_b_dir, b_a_dir, lock, t_lock, t_home_act, OPTIONS_A, DGID, wx_cmd, wx_t, wx_start
+ global ack_time_a, ack_time_b, ack_time_c, ack_tout, a_tf, b_tf, c_tf, a_b_dir, b_a_dir, b_c_dir, lock, t_lock, t_home_act 
+ global OPTIONS_A, DGID, wx_cmd, wx_t, wx_start, mode, c_connesso
  t = ack_tout * 1.1
  while 1:
      if (a_tf < 5.0):
@@ -674,6 +936,17 @@ def clock ():
      if ((a_tf > 2.0) and (b_a_dir == True)):
        lock_dir.acquire()
        b_a_dir = False
+       lock_dir.release()  
+       lock = False  
+       
+     if (c_tf < 5.0):
+       lock_c_time.acquire()
+       c_tf += 0.1
+       lock_c_time.release()    
+     
+     if ((c_tf > 2.0) and (b_c_dir == True)):
+       lock_dir.acquire()
+       b_c_dir = False
        lock_dir.release()  
        lock = False  
          
@@ -691,10 +964,16 @@ def clock ():
        lock_a.acquire()
        ack_time_a +=0.1
        lock_a.release()
+       
      if (ack_time_b < t):     
        lock_b.acquire()
        ack_time_b +=0.1
        lock_b.release()
+     
+     if (ack_time_c < t):   
+       lock_c.acquire()
+       ack_time_c +=0.1
+       lock_c.release()
      
      if lock:
        t_lock += 0.1
@@ -704,15 +983,22 @@ def clock ():
        # logging.info('clock: Reset lock by timeout')
        t_lock = 0.0
      
-     if ((HOME_TG > 0) and (HOME_TG != OPTIONS_A) and (back_to_home > 0)): # not at home
+     if (((HOME_TG > 0) and (HOME_TG != OPTIONS_A) and (back_to_home > 0)) or (mode == 2)): # not at home (home is always YSF Direct)
        t_home_act += 0.1
      
-     if ((t_home_act > time_to_home) and not a_b_dir and not b_a_dir and (OPTIONS_A != HOME_TG) and (back_to_home > 0)):  # back to home
+     if ((t_home_act > time_to_home) and not a_b_dir and not b_a_dir and not b_c_dir and not c_b_dir and ((OPTIONS_A != HOME_TG) or (mode == 2)) and (back_to_home > 0)):  # back to home
        OPTIONS_A = HOME_TG
        DGID = HOME_DGID
        logging.info('clock: Back To Home at ' + str(OPTIONS_A))
+       if (mode == 2):
+         mode = 1
+         q_bc.put(str.encode(DISCONN_C )) 
+         c_connesso = False
+         logging.error('rcv_b: Set Network to YSF Direct')
+         time.sleep(1.0)
        s_options = 'YSFO' + CALL_A.ljust(10) + 'group=' + str(OPTIONS_A)
        q_ba.put(str.encode(s_options))
+       
        wiresx.ReplyToWiresxConnReqPacket(a_connesso, OPTIONS_A, q_ab, TG_DSC)
        t_home_act = 0.0                      
      
@@ -738,7 +1024,7 @@ def clock ():
 
 # controllo connessioni
 def check_conn():
-  global a_connesso, b_connesso  
+  global a_connesso, b_connesso, c_connesso  
   while True:
     if (ack_time_a > ack_tout):
       logging.info('check_conn: BM Server connection Timeout')
@@ -746,16 +1032,26 @@ def check_conn():
       a_connesso = False
       lock_conn_a.release()
       conn (sock_a, 'A')    
+      
+    if (ack_time_c > ack_tout) and (mode == 2):
+      logging.info('check_conn: YSF Network connection Timeout')
+      lock_conn_c.acquire()
+      c_connesso = False
+      lock_conn_c.release()
+      conn (sock_c, 'C')    
+      
     time.sleep(ack_tout/2.0)
 
 # invio pacchetti keepalive
 def keepalive():
-  global ack_time_a, ack_time_b   
-  ncnt = 0
+  global ack_time_a, ack_time_b, ack_time_c   
   while True:
-    ncnt += 1
     if (a_connesso and not arresto):
         q_ba.put(str.encode(keepalive_str_a))
+    
+    if (c_connesso and not arresto):
+        q_bc.put(str.encode(keepalive_str_c))
+    
                    
     time.sleep(ack_period)  
 
@@ -766,17 +1062,18 @@ read_dgid_file(dgid_file)
 
 TG_DG_DICT = {}
 for i in range(100):
-  if (TG[i] > 0):
+  if (TG[i][1] > 0):
     TG_DG_DICT.update({i:TG[i]})
 
 for i in range(100):
-  if (TG[i] == OPTIONS_A):
+  if (TG[i][1] == OPTIONS_A):
     HOME_DGID = i
     break
 nd_tmp = CALL_B.strip() + '-' + SUF_B.strip()
 if (len(nd_tmp) > 10):
   nd_tmp = CALL_B
-  
+
+
 wiresx.setInfo(Name, TX_freq, RX_freq, CALL_B, nd_tmp.ljust(10))
 
 arresto = False
@@ -793,11 +1090,14 @@ t_send_a = threading.Thread(target = send_a)
 t_send_a.daemon = True
 t_send_b = threading.Thread(target = send_b)
 t_send_b.daemon = True
+t_send_c = threading.Thread(target = send_c)
+t_send_c.daemon = True
 t_rcv_a = threading.Thread(target = rcv_a)
 t_rcv_a.daemon = True
 t_rcv_b = threading.Thread(target = rcv_b)
 t_rcv_b.daemon = True
-
+t_rcv_c = threading.Thread(target = rcv_c)
+t_rcv_c.daemon = True
 
 
 t_clock.start() 
@@ -805,9 +1105,10 @@ t_conn.start()
 t_keep.start()
 t_send_a.start()
 t_send_b.start()
+t_send_c.start()
 t_rcv_a.start()
 t_rcv_b.start()
-
+t_rcv_c.start()
 
 
 while run:

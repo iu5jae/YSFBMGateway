@@ -369,8 +369,8 @@ def ReplyToWiresxAllReqPacket(q, TG_DG, start, dsc):
     for j in range(50):
       data[offset+j] = 0x20 
     data[offset:offset+1] = b'5'
-    tg = TG_DG[tg_dg_list[i + start]]
-   
+    tg = TG_DG[tg_dg_list[i + start]][1]
+    mode = TG_DG[tg_dg_list[i + start]][0]
     
     try:
      d = dsc[tg].ljust(16)
@@ -380,7 +380,7 @@ def ReplyToWiresxAllReqPacket(q, TG_DG, start, dsc):
       d = ('TG-' + str(tg) + '/' + str(tg_dg_list[i + start])).ljust(16)  
 
     s_warn = ''
-    if (len(str(tg)) > 5):  #TG not selectable from wires-x command
+    if ((len(str(tg)) > 5) or (mode == 2)):  #TG not selectable from wires-x command
       tg = 1
       s_warn = ' *'
     data[offset+1:offset+6] = str(tg).zfill(5).encode()
