@@ -27,14 +27,14 @@ For this example: impossible to send TG 222, TG 22292 and 2241 can also be calle
 Compiling a dgid.db file can be useful for creating a usage standard.
 Again in Wires-X mode, for example, TG-2241/41 on the Yaesu radio display represents the TG in use (2241) and (it is in dgid.db) the associated DG-ID (41).
 
-To manage the connection to a room of the YSF network, use the following syntax:
-27:YSF#27003:ROOM-ITALY:ysfroomitaly.iw2gob.it:42000
+To manage the connection to a room of the YSF network, use the following syntax:<br>
+27:YSF#27003:ROOM-ITALY:ysfroomitaly.iw2gob.it:42000<br>
 
-In particular:
-DG-ID:YSF#nnnnn:FREE DESCRIPTION:DNS/IP:PORT
+In particular:<br>
+DG-ID:YSF#nnnnn:FREE DESCRIPTION:DNS/IP:PORT<br>
 The room id, address and port are easily deduced from the YSF world registry. The description is displayed on the radio.
 
 The ysfbmgateway.ini file contains the gateway configuration such as ports for connection with MMDVMHost, credentials for authentication to the BM master (same Callsign for auth and hs/rpt).
 
-YSFBMGateway requires python 3.7 or higher. For a lean C4FM only installation it is recommended to use an empty raspbian distribution, compile MMDVMHost and add the gateway with the relative configurations. Nothing else is needed. Otherwise it can be added to the Pi-Star distribution with some simple configurations:
+YSFBMGateway requires python 3.7 or higher. For a lean C4FM only installation it is recommended to use an empty raspbian distribution, compile MMDVMHost and add the gateway with the relative configurations. Nothing else is needed. Otherwise it can be added to the Pi-Star distribution with some simple configurations:<br>
 https://www.grupporadiofirenze.net/2022/12/08/ysfbmgateway-connessione-a-bm-in-ysf-direct-protocol/
