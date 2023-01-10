@@ -34,6 +34,10 @@ In particular:<br>
 DG-ID:YSF#nnnnn:FREE DESCRIPTION:DNS/IP:PORT<br>
 The room id, address and port are easily deduced from the YSF world registry. The description is displayed on the radio.
 
+info:<br>
+if the dgid.db file is correctly compiled, you will see the confirmation in the gateway log, for example:<br>
+Loaded 53 YSF Direct and 3 YSF Network DGID<br>
+
 The ysfbmgateway.ini file contains the gateway configuration such as ports for connection with MMDVMHost, credentials for authentication to the BM master (same Callsign for auth and hs/rpt).
 
 YSFBMGateway requires python 3.7 or higher. For a lean C4FM only installation it is recommended to use an empty raspbian distribution, compile MMDVMHost and add the gateway with the relative configurations. Nothing else is needed. Otherwise it can be added to the Pi-Star distribution with some simple configurations:<br>
