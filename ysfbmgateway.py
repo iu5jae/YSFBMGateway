@@ -668,7 +668,7 @@ def rcv_c():
                     if (FI == 0): 
                       data_p = bya_msg[35:]
                       if (ysfpayload.processheaderdata(bya_msg[35:])):
-                        csd1 = ((ysfpayload.m_dest).ljust(10) + (str(DGID) + '/' + str(bya_msg[14:24], 'utf-8').strip()).ljust(10)).encode()
+                        csd1 = ((ysfpayload.m_dest).ljust(10) + (str(DGID) + '/' + str(bya_msg[14:24], 'utf-8').replace('-','/').split('/')[0].strip()).ljust(10)).encode()
                         csd2 = (ysfpayload.m_downlink.ljust(10) + ysfpayload.m_uplink.ljust(10)).encode()
                         ysfpayload.writeHeader(data_p, csd1, csd2)
                         data_mod = bytearray(155)
@@ -678,7 +678,7 @@ def rcv_c():
                     else:
                       if ((FN == 1) and (DT == 2)):
                         data_p = bya_msg[35:]
-                        src = (str(DGID) + '/' + str(bya_msg[14:24], 'utf-8').strip()).ljust(10).encode()
+                        src = (str(DGID) + '/' + str(bya_msg[14:24], 'utf-8').replace('-','/').split('/')[0].strip()).ljust(10).encode()
                         ysfpayload.writeVDMmode2Data(data_p, src)
                         data_mod = bytearray(155)
                         data_mod[:35] = bya_msg[:35]
