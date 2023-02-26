@@ -32,7 +32,7 @@ import ysfpayload
 import hashlib
 import wiresx
 
-ver = '230108'
+ver = '230225'
 
 a_connesso = False
 b_connesso = True
@@ -220,12 +220,8 @@ DISCONN_B = 'YSFU'  # stringa disconnessione "B"
 
 ACK_B = 'YSFPREFLECTOR '
 
-#CALL_A = CALL_A.strip()
-#CALL_B = CALL_B.strip()
-
 keepalive_str_a = 'YSFP' + CALL_A
 keepalive_str_b = 'YSFP' + CALL_B 
-keepalive_str_c = 'YSFP' + CALL_A
 
 # socket for YSF Direct
 sock_a = socket.socket(socket.AF_INET, 
@@ -321,9 +317,15 @@ def read_dgid_file(f):
             if ((len(mod_s) == 2) and (mod_s[0].upper() == 'BM')):
               tg_int = int(mod_s[1])
               mode_tmp = 1
-            if ((len(mod_s) == 2) and (mod_s[0].upper() == 'YSF')):
+            if (((len(mod_s) == 2) or (len(mod_s) == 3)) and (mod_s[0].upper() == 'YSF')):
               tg_int = int(mod_s[1])
               mode_tmp = 2              
+              if (len(mod_s) == 3):
+                dgid_tmp = int(mod_s[2])
+                if ((dgid_tmp < 0) or (dgid_tmp > 100)):
+                  dgid_tmp = 0  
+              else:
+                dgid_tmp = 0  
           except:
             dgid_int = 0
             error = True
@@ -354,7 +356,7 @@ def read_dgid_file(f):
               TG_DSC_TMP.update({tg_int:dsc})
             if (mode_tmp == 2):
               n_ysf += 1
-              TG_TMP[dgid_int] = (2, tg_int, dsc, c_split[3], int(c_split[4]))
+              TG_TMP[dgid_int] = (2, tg_int, dsc, c_split[3], int(c_split[4]), dgid_tmp)
               TG_DSC_TMP.update({tg_int:dsc})
             
             
@@ -438,7 +440,7 @@ def conn (sock, lato):
 
 
     if (lato == 'C'):
-      logging.info('conn: provo a connettere C') 
+      logging.info('conn: try to connecto YSF Reflector') 
       try:
         UDP_IP_C_N = socket.gethostbyname(UDP_IP_C)
         sock.connect((UDP_IP_C, UDP_PORT_C))
@@ -446,23 +448,8 @@ def conn (sock, lato):
 #        msgFromServer = sock.recvfrom(bufferSize)
         sock_err = False
       except Exception as e:
-        logging.error('conn: Errore connessione C ' + str(e))
+        logging.error('conn: Error connecting YSF Reflector ' + str(e))
         sock_err = True
-#      if (not sock_err):  
-#        
-##        # scelgo la stringa giusta da verificare
-#        
-#        msg = msgFromServer[0][0:14]
-#        
-#        if (msg == str.encode(ACK_C)):
-#          logging.info('connesso C')
-#          lock_conn_c.acquire()
-#          UDP_IP_C_N = socket.gethostbyname(UDP_IP_C)
-#          c_connesso = True
-#          lock_conn_c.release()    
-#          lock_c.acquire()
-#          ack_time_c = 0
-#          lock_c.release()
        
 
 # invio dati a "A"
@@ -621,7 +608,7 @@ def rcv_c():
           
           if ((len(msgFromServer[0]) == 14) and (msgFromServer[0][0:14] == str.encode(ACK_C))):
             if not c_connesso:
-              logging.info('rcv_c: connesso C')
+              logging.info('rcv_c: YSF Reflector connected')
               c_connesso = True
             lock_c.acquire()
             ack_time_c = 0
@@ -722,7 +709,9 @@ def rcv_c():
 
 def rcv_b():
   global a_connesso, b_connesso, c_connesso, a_b_dir, b_a_dir, ack_time_a, ack_time_b, a_tf, b_tf, OPTIONS_A, lock, TG, t_lock, DGID, t_home_act, wx_cmd, wx_t, wx_start
-  global UDP_IP_A, UDP_PORT_A, sock_a, mode, UDP_IP_C, UDP_PORT_C
+  global UDP_IP_A, UDP_PORT_A, sock_a, mode, UDP_IP_C, UDP_PORT_C, MESSAGE_C
+  ch_gw = False
+  gw_suf = 0
   while True:
     if True:
       try:
@@ -736,9 +725,16 @@ def rcv_b():
           lock_b.release()
           
           
-        if (msgFromServer[0][0:4] == b'YSFD'):          
+        if (msgFromServer[0][0:4] == b'YSFD'):  
+          if ch_gw:
+            msg_bya = bytearray(msgFromServer[0])   
+            msg_bya[4:14] = str.encode((CALL_A[0:7].strip()+ '-' + str(gw_suf)).ljust(10))
+            msg_rcv = bytes(msg_bya)    
+          else:
+             msg_rcv = msgFromServer[0]
+            
           t_home_act = 0.0
-          fich_b = ysffich.decode(msgFromServer[0][40:])
+          fich_b = ysffich.decode(msg_rcv[40:])
           if fich_b: 
             FI = ysffich.getFI(fich_b)
             SQL = ysffich.getSQ(fich_b)
@@ -750,7 +746,7 @@ def rcv_b():
             if ((SQL != 127) and (DT != 1)):              
               ysffich.setSQ(0, fich_b)
               ysffich.setVoIP(False, fich_b)
-              bya_msg = bytearray(msgFromServer[0])   
+              bya_msg = bytearray(msg_rcv)   
               ysffich.encode(bya_msg, fich_b)
               #print('a > b ' +  str(a_b_dir) + ' b > a ' + str(b_a_dir))
               if ((not a_b_dir) and (not b_a_dir) and (FI != 2)):  # header and bridge free
@@ -763,6 +759,8 @@ def rcv_b():
                       if (TG[SQL][0] == 1): # Direct 
                         mode = 1
                         q_bc.put(str.encode(DISCONN_C )) 
+                        ch_gw = False
+                        gw_suf = 0
                         c_connesso = False
                         logging.error('rcv_b: Set Network to YSF Direct')
                     
@@ -784,8 +782,16 @@ def rcv_b():
                         time.sleep(1.0)
                       UDP_IP_C = TG[SQL][3] 
                       UDP_PORT_C = TG[SQL][4]
+                      if (TG[SQL][5] > 0):
+                        MESSAGE_C = 'YSFP' + (CALL_A[0:7].strip()+ '-' + str(TG[SQL][5]).zfill(2)).ljust(10)
+                        ch_gw = True
+                        gw_suf = TG[SQL][5]
+                      else:
+                        MESSAGE_C = ('YSFP' + CALL_A).ljust(10)
+                        ch_gw = False  
+                        gw_suf = 0
                       conn (sock_c, 'C') 
-                      logging.error('rcv_b: Set Network to YSF Net at YSF#' + str(TG[SQL][1]) + ' with DGID ' + str(SQL))
+                      logging.error('rcv_b: Set Network to YSF Net at YSF#' + str(TG[SQL][1]) + ' with DGID ' + str(SQL) + ' and callsign ' + MESSAGE_C[4:].strip())
                     
                     lock = True
                     t_lock = 0.0
@@ -841,7 +847,7 @@ def rcv_b():
               #########################
               # logging.info('rcv_b: W-X Command - SQL = ' + str(SQL) + ' DT = ' + str(DT) + ' FI = ' + str(FI) + ' FN = ' + str(FN) + ' FT = ' + str(FT))  
               try:
-                cmd = wiresx.process(msgFromServer[0][35:], CALL_B, DT, FI, FN, FT) 
+                cmd = wiresx.process(msg_rcv[35:], CALL_B, DT, FI, FN, FT) 
               except Exception as e:
                 logging.error('rcv_b: wires-x process command: ' + str(e))
               if (cmd == 1):
@@ -1050,7 +1056,7 @@ def keepalive():
         q_ba.put(str.encode(keepalive_str_a))
     
     if (c_connesso and not arresto):
-        q_bc.put(str.encode(keepalive_str_c))
+        q_bc.put(str.encode(MESSAGE_C))
     
                    
     time.sleep(ack_period)  
