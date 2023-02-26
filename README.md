@@ -34,6 +34,9 @@ In particular:<br>
 DG-ID:YSF#nnnnn:FREE DESCRIPTION:DNS/IP:PORT<br>
 The room id, address and port are easily deduced from the YSF world registry. The description is displayed on the radio.
 
+A latest software update enables the suffix where indicated in addition to the callsign. This feature is useful to connect a specific flow on reflectors like pYSF3 and make it FIXED. After having specified the room, it is necessary to enter # and the numeric identifier (from 01 to 99) which will complete the callsign (CALL-nn) used in the hs/rpt connection. If omitted, the link callsign will have no numeric suffixes.<br>
+27:YSF#27003#27:ROOM-ITALY:ysfroomitaly.iw2gob.it:42000
+
 info:<br>
 if the dgid.db file is correctly compiled, you will see the confirmation in the gateway log, for example:<br>
 Loaded 53 YSF Direct and 3 YSF Network DGID<br>
